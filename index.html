@@ -136,8 +136,8 @@
   .fig{background:var(--surface-2); border-radius:var(--radius-sm); padding:8px 9px;}
   .fig .k{font-size:10.5px; color:var(--text-faint); text-transform:uppercase; letter-spacing:.05em;}
   .fig .v{font-family:var(--font-mono); font-size:14.5px; margin-top:3px; color:var(--text);}
-  .item-actions{display:flex; gap:8px; margin-top:2px;}
-  .item-actions button{flex:1;}
+  .item-actions{display:flex; flex-wrap:wrap; gap:8px; margin-top:2px;}
+  .item-actions button{flex:1; min-width:90px;}
 
   /* ---------- Buttons ---------- */
   .btn{
@@ -740,14 +740,22 @@ if (configPendente) {
     lista.querySelectorAll('[data-menos]').forEach(b=> b.addEventListener('click', ()=> alterarCarrinho(b.dataset.menos, -1)));
   }
 
-  async function gerarNumeroPedido(){
-    const ref = db.collection('contadores').doc('pedidos');
-    return db.runTransaction(async (tx)=>{
-      const doc = await tx.get(ref);
-      const proximo = (doc.exists ? (doc.data().ultimo||0) : 0) + 1;
-      tx.set(ref, {ultimo: proximo}, {merge:true});
-      return proximo;
+  /* Expande o carrinho (que pode ter kits) num mapa {itemId simples: quantidade a reservar} */
+  function expandirCarrinhoParaBaixa(){
+    const porId = {};
+    vitrineItens.forEach(i=> porId[i.id]=i);
+    const baixas = {};
+    Object.entries(carrinho).forEach(([itemId, it])=>{
+      const item = porId[itemId];
+      if (item && item.tipo === 'kit' && Array.isArray(item.composicao)){
+        item.composicao.forEach(c=>{
+          baixas[c.itemId] = (baixas[c.itemId]||0) + (c.quantidade||1) * it.quantidade;
+        });
+      } else {
+        baixas[itemId] = (baixas[itemId]||0) + it.quantidade;
+      }
     });
+    return baixas;
   }
 
   document.getElementById('btnEnviarPedido').addEventListener('click', async ()=>{
@@ -758,19 +766,47 @@ if (configPendente) {
     const btn = document.getElementById('btnEnviarPedido');
     btn.disabled = true;
     try{
-      const numero = await gerarNumeroPedido();
-      const numeroFmt = '#' + String(numero).padStart(4,'0');
+      const baixas = expandirCarrinhoParaBaixa();
+      const idsBaixa = Object.keys(baixas);
+      const contadorRef = db.collection('contadores').doc('pedidos');
+
       const itensPedido = entradas.map(([id, it])=>({
         itemId: id, nome: it.nome, quantidade: it.quantidade,
         valorUnitario: it.valorVenda, valorTotal: round2(it.valorVenda*it.quantidade)
       }));
       const total = round2(totalCarrinho());
 
-      await db.collection('pedidos').add({
-        numero, cliente: nome || 'Não informado', itens: itensPedido, total,
-        status: 'pendente', criadoEm: firebase.firestore.FieldValue.serverTimestamp()
+      // Uma única transação: gera o número sequencial E já reserva (baixa) o
+      // estoque dos itens/componentes — assim ninguém consegue pedir mais do
+      // que existe, mesmo com vários clientes pedindo ao mesmo tempo.
+      const numero = await db.runTransaction(async (tx)=>{
+        const contadorDoc = await tx.get(contadorRef);
+        const proximo = (contadorDoc.exists ? (contadorDoc.data().ultimo||0) : 0) + 1;
+
+        idsBaixa.forEach(itemId=>{
+          const qtd = baixas[itemId];
+          tx.update(db.collection('itens').doc(itemId), {
+            estoqueAtual: firebase.firestore.FieldValue.increment(-qtd),
+            atualizadoEm: firebase.firestore.FieldValue.serverTimestamp()
+          });
+          tx.update(db.collection('vitrine').doc(itemId), {
+            estoqueAtual: firebase.firestore.FieldValue.increment(-qtd),
+            atualizadoEm: firebase.firestore.FieldValue.serverTimestamp()
+          });
+        });
+
+        tx.set(contadorRef, {ultimo: proximo}, {merge:true});
+
+        const pedidoRef = db.collection('pedidos').doc();
+        tx.set(pedidoRef, {
+          numero: proximo, cliente: nome || 'Não informado', itens: itensPedido, total,
+          status: 'pendente', criadoEm: firebase.firestore.FieldValue.serverTimestamp()
+        });
+
+        return proximo;
       });
 
+      const numeroFmt = '#' + String(numero).padStart(4,'0');
       let msg = `Olá! Gostaria de fazer o pedido ${numeroFmt} na Oficina Criativa:\n\n`;
       itensPedido.forEach(it=>{
         msg += `• ${it.quantidade}x ${it.nome} — ${fmt(it.valorTotal)}\n`;
@@ -785,9 +821,13 @@ if (configPendente) {
       renderVitrinePublica();
       atualizarFabCarrinho();
       overlayPedido.classList.remove('active');
-      toast(`Pedido ${numeroFmt} enviado!`);
+      toast(`Pedido ${numeroFmt} enviado! Seu estoque já está reservado.`);
     }catch(err){
-      toast('Erro ao gerar o pedido: '+err.message);
+      if (err.code === 'permission-denied'){
+        toast('Um dos itens ficou sem estoque enquanto você finalizava. Atualize a página e tente de novo.');
+      } else {
+        toast('Erro ao gerar o pedido: '+err.message);
+      }
     }finally{
       btn.disabled = false;
     }
@@ -936,6 +976,7 @@ function recalcularKits(){
 }
 
 function statusEstoque(item){
+  if (item.pausado) return 'bad';
   const min = item.estoqueMinimo ?? 3;
   if (item.estoqueAtual <= 0) return 'bad';
   if (item.estoqueAtual <= min) return 'warn';
@@ -960,7 +1001,7 @@ function renderItens(){
 
   lista.innerHTML = filtrados.map(i=>{
     const st = statusEstoque(i);
-    const label = st==='bad' ? 'esgotado' : st==='warn' ? 'estoque baixo' : 'estoque ok';
+    const label = i.pausado ? 'sem estoque (pausado)' : (st==='bad' ? 'sem estoque' : st==='warn' ? 'estoque baixo' : 'estoque ok');
     const isKit = i.tipo === 'kit';
     const thumb = i.imagem
       ? `<img class="item-thumb" src="${i.imagem}" alt="">`
@@ -987,6 +1028,7 @@ function renderItens(){
           ? `<button class="btn small ghost" data-editar="${i.id}" style="flex:2">Editar kit</button>`
           : `<button class="btn small" data-repor="${i.id}">Repor estoque</button><button class="btn small ghost" data-editar="${i.id}">Editar item</button>`
         }
+        <button class="btn small ${i.pausado?'':'ghost'}" data-pausar="${i.id}">${i.pausado ? 'Reativar' : 'Sem estoque'}</button>
         <button class="btn small danger" data-excluir="${i.id}">Excluir</button>
       </div>
     </div>`;
@@ -998,6 +1040,7 @@ function renderItens(){
     if (item && item.tipo === 'kit') abrirModalKit(b.dataset.editar);
     else abrirModalEditar(b.dataset.editar);
   }));
+  lista.querySelectorAll('[data-pausar]').forEach(b=> b.addEventListener('click', ()=> alternarPausa(b.dataset.pausar)));
   lista.querySelectorAll('[data-excluir]').forEach(b=> b.addEventListener('click', ()=> excluirItem(b.dataset.excluir)));
 }
 document.getElementById('buscaItem').addEventListener('input', renderItens);
@@ -1114,6 +1157,20 @@ async function excluirItem(id){
   if (!confirm(`Excluir "${item.nome}" do estoque? Essa ação não apaga vendas já registradas.`)) return;
   await db.collection('itens').doc(id).delete();
   toast('Item excluído');
+}
+
+async function alternarPausa(id){
+  const item = itens.find(i=>i.id===id);
+  if (!item) return;
+  try{
+    await db.collection('itens').doc(id).update({
+      pausado: !item.pausado,
+      atualizadoEm: firebase.firestore.FieldValue.serverTimestamp()
+    });
+    toast(item.pausado ? 'Item reativado — volta a aparecer na vitrine' : 'Item marcado como sem estoque — sumiu da vitrine');
+  }catch(err){
+    toast('Erro: '+err.message);
+  }
 }
 
 /* ---------------- MODAL KIT ---------------- */
@@ -1624,39 +1681,17 @@ async function confirmarPedido(id){
   const pedido = pedidos.find(p=>p.id===id);
   if (!pedido) return;
 
-  for (const linha of pedido.itens){
-    const item = itens.find(i=>i.id===linha.itemId);
-    if (!item || item.estoqueAtual < linha.quantidade){
-      return toast(`Estoque insuficiente de "${linha.nome}" pra confirmar este pedido`);
-    }
-  }
-
   try{
     await db.runTransaction(async (tx)=>{
-      const baixas = expandirParaBaixaEstoque(pedido.itens);
-      const idsBaixa = Object.keys(baixas);
-      const refsBaixa = idsBaixa.map(itemId=> db.collection('itens').doc(itemId));
-      const docsBaixa = await Promise.all(refsBaixa.map(r=> tx.get(r)));
-
-      docsBaixa.forEach((d, idx)=>{
-        const data = d.data();
-        if (!data || (data.estoqueAtual||0) < baixas[idsBaixa[idx]]){
-          throw new Error(`Estoque insuficiente de "${data ? data.nome : idsBaixa[idx]}"`);
-        }
-      });
-
       let valorTotalVenda = 0, custoTotalVenda = 0;
       const itensVenda = pedido.itens.map(l=>{
         const item = itens.find(i=>i.id===l.itemId);
-        const valorTotal = round2((item?.valorVenda||l.valorUnitario||0) * l.quantidade);
+        const valorUnitario = item ? item.valorVenda : (l.valorUnitario||0);
+        const custoUnitario = item ? item.custoUnitario : 0;
+        const valorTotal = round2(valorUnitario * l.quantidade);
         valorTotalVenda += valorTotal;
-        custoTotalVenda += (item?.custoUnitario||0) * l.quantidade;
-        return {itemId: l.itemId, nome: item?.nome||l.nome, quantidade: l.quantidade, valorUnitario: item?.valorVenda||l.valorUnitario||0, custoUnitario: item?.custoUnitario||0, valorTotal};
-      });
-
-      docsBaixa.forEach((d, idx)=>{
-        const data = d.data();
-        tx.update(refsBaixa[idx], {estoqueAtual: data.estoqueAtual - baixas[idsBaixa[idx]]});
+        custoTotalVenda += custoUnitario * l.quantidade;
+        return {itemId: l.itemId, nome: item?.nome||l.nome, quantidade: l.quantidade, valorUnitario, custoUnitario, valorTotal};
       });
 
       const vendaRef = db.collection('vendas').doc();
@@ -1680,9 +1715,33 @@ async function confirmarPedido(id){
 }
 
 async function excluirPedido(id){
-  if (!confirm('Excluir este pedido do histórico? Isso não afeta o estoque.')) return;
-  await db.collection('pedidos').doc(id).delete();
-  toast('Pedido excluído');
+  const pedido = pedidos.find(p=>p.id===id);
+  if (!pedido) return;
+  const aindaPendente = pedido.status !== 'atendido';
+  const msg = aindaPendente
+    ? 'Excluir este pedido? O estoque reservado pra ele será devolvido.'
+    : 'Excluir este pedido do histórico? Isso não afeta o estoque (a venda já foi lançada).';
+  if (!confirm(msg)) return;
+
+  try{
+    if (aindaPendente){
+      const baixas = expandirParaBaixaEstoque(pedido.itens);
+      const batch = db.batch();
+      Object.entries(baixas).forEach(([itemId, qtd])=>{
+        batch.update(db.collection('itens').doc(itemId), {
+          estoqueAtual: firebase.firestore.FieldValue.increment(qtd),
+          atualizadoEm: firebase.firestore.FieldValue.serverTimestamp()
+        });
+      });
+      batch.delete(db.collection('pedidos').doc(id));
+      await batch.commit();
+    } else {
+      await db.collection('pedidos').doc(id).delete();
+    }
+    toast('Pedido excluído');
+  }catch(err){
+    toast('Erro: '+err.message);
+  }
 }
 
 /* ---------------- HISTÓRICO DE VENDAS ---------------- */
@@ -1772,8 +1831,10 @@ async function sincronizarVitrinePublica(){
       batch.set(ref, {
         nome: i.nome,
         valorVenda: i.valorVenda || 0,
-        estoqueAtual: i.estoqueAtual || 0,
+        estoqueAtual: i.pausado ? 0 : (i.estoqueAtual || 0),
         imagem: i.imagem || null,
+        tipo: i.tipo || 'simples',
+        composicao: i.tipo === 'kit' ? (i.composicao||[]) : [],
         atualizadoEm: firebase.firestore.FieldValue.serverTimestamp()
       });
     });
