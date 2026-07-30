@@ -397,7 +397,7 @@
           <div class="stat-card"><div class="label">Investido em estoque</div><div class="value mono" id="statInvestido">R$ 0,00</div></div>
           <div class="stat-card accent"><div class="label">Valor de venda do estoque</div><div class="value mono" id="statPotencial">R$ 0,00</div></div>
         </div>
-        <div class="toolbar"><input class="search" id="buscaItem" placeholder="Buscar item..."></div>
+        <div class="toolbar"><input class="search" id="buscaItem" placeholder="Buscar item..."><button class="btn small" id="btnAbrirKit">+ Kit</button></div>
         <div class="item-list" id="listaItens"></div>
       </section>
 
@@ -531,6 +531,41 @@
     </div>
     <p style="font-size:11.5px;color:var(--text-faint);margin:2px 0 12px">O custo unitário só muda quando você repõe estoque com uma nova compra.</p>
     <button class="btn primary" id="btnSalvarEdicao" style="width:100%;padding:13px">Salvar alterações</button>
+  </div>
+</div>
+
+<!-- MODAL KIT -->
+<div class="overlay" id="overlayKit">
+  <div class="modal">
+    <button class="modal-close" data-close-kit>×</button>
+    <h3 id="modalKitTitulo">Montar kit</h3>
+    <div class="field"><label>Nome do kit</label><input id="kitNome" placeholder="Ex: Kit Chaveiro e Copo"></div>
+
+    <label style="display:block;font-size:12px;color:var(--text-dim);margin-bottom:8px">Itens que compõem o kit</label>
+    <div id="linhasKit"></div>
+    <button class="add-line-btn" id="addLinhaKit">+ adicionar item ao kit</button>
+
+    <div class="field-row" style="margin-top:12px">
+      <div class="field"><label>% de lucro</label><input id="kitLucro" type="number" inputmode="decimal" placeholder="Ex: 30"></div>
+      <div class="field"><label>Ou valor de venda final</label><input id="kitValorFinal" type="number" inputmode="decimal" placeholder="R$ 0,00"></div>
+    </div>
+    <div class="field"><label>Estoque mínimo (alerta)</label><input id="kitEstoqueMinimo" type="number" inputmode="numeric" placeholder="3"></div>
+    <div class="field">
+      <label>Foto do kit (opcional)</label>
+      <input type="file" id="kitImagem" accept="image/*">
+      <div id="kitImagemPreviewWrap" style="display:none; align-items:center; gap:10px; margin-top:9px">
+        <img id="kitImagemPreview" style="width:64px;height:64px;object-fit:cover;border-radius:10px;border:1px solid var(--line)">
+        <button type="button" class="btn small ghost" id="btnKitRemoverImagem">remover foto</button>
+      </div>
+    </div>
+
+    <div class="preview-box">
+      <div class="p"><div class="k">Custo do kit</div><div class="v" id="kitPrevCusto">R$ 0,00</div></div>
+      <div class="p"><div class="k">Venda</div><div class="v" id="kitPrevVenda" style="color:var(--accent)">R$ 0,00</div></div>
+      <div class="p"><div class="k">Estoque disp.</div><div class="v" id="kitPrevEstoque">0</div></div>
+    </div>
+    <p style="font-size:11.5px;color:var(--text-faint);margin:2px 0 12px">O estoque do kit é calculado automaticamente pela quantidade disponível dos itens que o compõem — não precisa repor separado.</p>
+    <button class="btn primary" id="btnSalvarKit" style="width:100%;padding:13px">Salvar kit</button>
   </div>
 </div>
 
@@ -830,6 +865,7 @@ let pedidos = [];
 /* ---------------- FIRESTORE LISTENERS ---------------- */
 db.collection('itens').orderBy('nome').onSnapshot(snap=>{
   itens = snap.docs.map(d=>({id:d.id, ...d.data()}));
+  recalcularKits();
   renderItens();
   renderResumo();
   sincronizarVitrinePublica();
@@ -849,6 +885,26 @@ db.collection('pedidos').orderBy('numero','desc').onSnapshot(snap=>{
 }, err=> toast('Erro ao carregar pedidos: '+err.message));
 
 /* ---------------- RENDER: ESTOQUE ---------------- */
+function recalcularKits(){
+  const porId = {};
+  itens.forEach(i=> porId[i.id]=i);
+  itens.forEach(i=>{
+    if (i.tipo === 'kit' && Array.isArray(i.composicao) && i.composicao.length){
+      let custo = 0, estoqueDisp = Infinity;
+      i.composicao.forEach(c=>{
+        const comp = porId[c.itemId];
+        const qtdNecessaria = c.quantidade || 1;
+        if (!comp){ estoqueDisp = 0; return; }
+        custo += (comp.custoUnitario||0) * qtdNecessaria;
+        estoqueDisp = Math.min(estoqueDisp, Math.floor((comp.estoqueAtual||0) / qtdNecessaria));
+      });
+      i.custoUnitario = round2(custo);
+      i.estoqueAtual = isFinite(estoqueDisp) ? estoqueDisp : 0;
+      i.valorVenda = round2(i.custoUnitario * (1+(i.percentualLucro||0)/100));
+    }
+  });
+}
+
 function statusEstoque(item){
   const min = item.estoqueMinimo ?? 3;
   if (item.estoqueAtual <= 0) return 'bad';
@@ -875,6 +931,7 @@ function renderItens(){
   lista.innerHTML = filtrados.map(i=>{
     const st = statusEstoque(i);
     const label = st==='bad' ? 'esgotado' : st==='warn' ? 'estoque baixo' : 'estoque ok';
+    const isKit = i.tipo === 'kit';
     const thumb = i.imagem
       ? `<img class="item-thumb" src="${i.imagem}" alt="">`
       : `<div class="item-thumb-ph"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="14" rx="2"/><path d="M3 15l4-4 3 3 5-5 6 6"/></svg></div>`;
@@ -883,7 +940,10 @@ function renderItens(){
       <div class="row1">
         <div style="display:flex; align-items:center; gap:10px; min-width:0">
           ${thumb}
-          <div class="nome" style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap">${escapeHtml(i.nome)}</div>
+          <div style="min-width:0">
+            <div class="nome" style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap">${escapeHtml(i.nome)}</div>
+            ${isKit ? `<span class="badge" style="background:var(--accent-soft); color:var(--accent); margin-top:3px; display:inline-block">kit</span>` : ''}
+          </div>
         </div>
         <span class="badge ${st}">${i.estoqueAtual} un · ${label}</span>
       </div>
@@ -893,15 +953,21 @@ function renderItens(){
         <div class="fig"><div class="k">Lucro %</div><div class="v">${round2(i.percentualLucro||0)}%</div></div>
       </div>
       <div class="item-actions">
-        <button class="btn small" data-repor="${i.id}">Repor estoque</button>
-        <button class="btn small ghost" data-editar="${i.id}">Editar item</button>
+        ${isKit
+          ? `<button class="btn small ghost" data-editar="${i.id}" style="flex:2">Editar kit</button>`
+          : `<button class="btn small" data-repor="${i.id}">Repor estoque</button><button class="btn small ghost" data-editar="${i.id}">Editar item</button>`
+        }
         <button class="btn small danger" data-excluir="${i.id}">Excluir</button>
       </div>
     </div>`;
   }).join('');
 
   lista.querySelectorAll('[data-repor]').forEach(b=> b.addEventListener('click', ()=> abrirModalCompra(b.dataset.repor)));
-  lista.querySelectorAll('[data-editar]').forEach(b=> b.addEventListener('click', ()=> abrirModalEditar(b.dataset.editar)));
+  lista.querySelectorAll('[data-editar]').forEach(b=> b.addEventListener('click', ()=>{
+    const item = itens.find(i=>i.id===b.dataset.editar);
+    if (item && item.tipo === 'kit') abrirModalKit(b.dataset.editar);
+    else abrirModalEditar(b.dataset.editar);
+  }));
   lista.querySelectorAll('[data-excluir]').forEach(b=> b.addEventListener('click', ()=> excluirItem(b.dataset.excluir)));
 }
 document.getElementById('buscaItem').addEventListener('input', renderItens);
@@ -1020,6 +1086,175 @@ async function excluirItem(id){
   toast('Item excluído');
 }
 
+/* ---------------- MODAL KIT ---------------- */
+const overlayKit = document.getElementById('overlayKit');
+let kitEditandoId = null;
+let linhasKit = [{itemId:'', quantidade:1}];
+let kitCampoEditadoPorUltimo = 'lucro';
+let kitImagemDataUrl = undefined; // undefined = não mexeu | null = removida | string = nova foto
+
+function itensSimplesDisponiveis(excluirId){
+  return itens.filter(i=> i.tipo !== 'kit' && i.id !== excluirId);
+}
+
+function abrirModalKit(id){
+  const kit = id ? itens.find(i=>i.id===id) : null;
+  kitEditandoId = id || null;
+  kitCampoEditadoPorUltimo = 'lucro';
+  kitImagemDataUrl = undefined;
+
+  document.getElementById('modalKitTitulo').textContent = kit ? `Editar kit — ${kit.nome}` : 'Montar kit';
+  document.getElementById('kitNome').value = kit ? kit.nome : '';
+  document.getElementById('kitLucro').value = kit ? round2(kit.percentualLucro||0) : '';
+  document.getElementById('kitValorFinal').value = kit ? round2(kit.valorVenda||0) : '';
+  document.getElementById('kitEstoqueMinimo').value = kit ? (kit.estoqueMinimo ?? 3) : 3;
+
+  linhasKit = (kit && Array.isArray(kit.composicao) && kit.composicao.length)
+    ? kit.composicao.map(c=> ({itemId: c.itemId, quantidade: c.quantidade||1}))
+    : [{itemId:'', quantidade:1}];
+
+  const previewWrap = document.getElementById('kitImagemPreviewWrap');
+  const previewImg = document.getElementById('kitImagemPreview');
+  document.getElementById('kitImagem').value = '';
+  if (kit && kit.imagem){ previewImg.src = kit.imagem; previewWrap.style.display = 'flex'; }
+  else { previewWrap.style.display = 'none'; }
+
+  renderLinhasKit();
+  overlayKit.classList.add('active');
+}
+document.getElementById('btnAbrirKit').addEventListener('click', ()=> abrirModalKit(null));
+document.querySelectorAll('[data-close-kit]').forEach(b=> b.addEventListener('click', ()=> overlayKit.classList.remove('active')));
+overlayKit.addEventListener('click', e=>{ if(e.target===overlayKit) overlayKit.classList.remove('active'); });
+
+function renderLinhasKit(){
+  const cont = document.getElementById('linhasKit');
+  const disponiveis = itensSimplesDisponiveis(kitEditandoId);
+  cont.innerHTML = linhasKit.map((linha, idx)=>{
+    return `
+    <div class="sale-line">
+      <div class="line-top">
+        <select data-idx="${idx}" class="sel-item-kit">
+          <option value="">Selecione o item</option>
+          ${disponiveis.map(i=>`<option value="${i.id}" ${i.id===linha.itemId?'selected':''}>${escapeHtml(i.nome)} (${i.estoqueAtual} em estoque)</option>`).join('')}
+        </select>
+        <input type="number" min="1" data-idx="${idx}" class="qtd-item-kit" value="${linha.quantidade}" placeholder="Qtd">
+      </div>
+      <div class="line-bottom">
+        <button class="remove" data-idx="${idx}">remover</button>
+      </div>
+    </div>`;
+  }).join('');
+
+  cont.querySelectorAll('.sel-item-kit').forEach(sel=> sel.addEventListener('change', e=>{
+    linhasKit[e.target.dataset.idx].itemId = e.target.value; renderLinhasKit();
+  }));
+  cont.querySelectorAll('.qtd-item-kit').forEach(inp=> inp.addEventListener('input', e=>{
+    linhasKit[e.target.dataset.idx].quantidade = parseInt(e.target.value)||1; atualizarPreviewKit();
+  }));
+  cont.querySelectorAll('.remove').forEach(b=> b.addEventListener('click', e=>{
+    linhasKit.splice(e.target.dataset.idx,1);
+    if (!linhasKit.length) linhasKit.push({itemId:'', quantidade:1});
+    renderLinhasKit();
+  }));
+  atualizarPreviewKit();
+}
+document.getElementById('addLinhaKit').addEventListener('click', ()=>{
+  linhasKit.push({itemId:'', quantidade:1}); renderLinhasKit();
+});
+
+document.getElementById('kitLucro').addEventListener('input', ()=>{ kitCampoEditadoPorUltimo='lucro'; atualizarPreviewKit(); });
+document.getElementById('kitValorFinal').addEventListener('input', ()=>{ kitCampoEditadoPorUltimo='valorFinal'; atualizarPreviewKit(); });
+
+function calcularCustoKit(){
+  let custo = 0, estoqueDisp = Infinity;
+  linhasKit.forEach(l=>{
+    if (!l.itemId || !l.quantidade) return;
+    const item = itens.find(i=>i.id===l.itemId);
+    if (!item) return;
+    custo += (item.custoUnitario||0) * l.quantidade;
+    estoqueDisp = Math.min(estoqueDisp, Math.floor((item.estoqueAtual||0) / l.quantidade));
+  });
+  return {custo, estoqueDisp: isFinite(estoqueDisp) ? estoqueDisp : 0};
+}
+
+function atualizarPreviewKit(){
+  const {custo, estoqueDisp} = calcularCustoKit();
+  let lucro, venda;
+  if (kitCampoEditadoPorUltimo === 'valorFinal'){
+    venda = parseFloat((document.getElementById('kitValorFinal').value||'0').replace(',','.'))||0;
+    lucro = custo > 0 ? ((venda/custo)-1)*100 : 0;
+    document.getElementById('kitLucro').value = custo > 0 ? round2(lucro) : '';
+  } else {
+    lucro = parseFloat((document.getElementById('kitLucro').value||'0').replace(',','.'))||0;
+    venda = custo * (1+lucro/100);
+    document.getElementById('kitValorFinal').value = venda > 0 ? round2(venda) : '';
+  }
+  document.getElementById('kitPrevCusto').textContent = fmt(custo);
+  document.getElementById('kitPrevVenda').textContent = fmt(venda);
+  document.getElementById('kitPrevEstoque').textContent = estoqueDisp;
+}
+
+document.getElementById('kitImagem').addEventListener('change', async (e)=>{
+  const file = e.target.files[0];
+  if (!file) return;
+  try{
+    kitImagemDataUrl = await comprimirImagem(file);
+    document.getElementById('kitImagemPreview').src = kitImagemDataUrl;
+    document.getElementById('kitImagemPreviewWrap').style.display = 'flex';
+  }catch(err){
+    toast('Erro ao processar a foto: '+err.message);
+  }
+});
+document.getElementById('btnKitRemoverImagem').addEventListener('click', ()=>{
+  kitImagemDataUrl = null;
+  document.getElementById('kitImagem').value = '';
+  document.getElementById('kitImagemPreviewWrap').style.display = 'none';
+});
+
+document.getElementById('btnSalvarKit').addEventListener('click', async ()=>{
+  const nome = document.getElementById('kitNome').value.trim();
+  const lucro = parseFloat((document.getElementById('kitLucro').value||'').replace(',','.'));
+  const estoqueMinimo = parseFloat((document.getElementById('kitEstoqueMinimo').value||'3').replace(',','.'))||3;
+  const linhasValidas = linhasKit.filter(l=> l.itemId && l.quantidade>0);
+
+  if (!nome) return toast('Informe o nome do kit');
+  if (!linhasValidas.length) return toast('Adicione ao menos um item ao kit');
+  if (isNaN(lucro)) return toast('Informe a % de lucro ou o valor de venda final');
+
+  const {custo, estoqueDisp} = calcularCustoKit();
+  const valorVenda = round2(custo * (1+lucro/100));
+  const composicao = linhasValidas.map(l=>{
+    const item = itens.find(i=>i.id===l.itemId);
+    return {itemId: l.itemId, nome: item ? item.nome : '', quantidade: l.quantidade};
+  });
+
+  const btn = document.getElementById('btnSalvarKit');
+  btn.disabled = true;
+  try{
+    const dados = {
+      nome, tipo: 'kit', composicao,
+      custoUnitario: round2(custo), percentualLucro: lucro, valorVenda,
+      estoqueAtual: estoqueDisp, estoqueMinimo,
+      atualizadoEm: firebase.firestore.FieldValue.serverTimestamp()
+    };
+    if (kitImagemDataUrl !== undefined) dados.imagem = kitImagemDataUrl;
+
+    if (kitEditandoId){
+      await db.collection('itens').doc(kitEditandoId).update(dados);
+    } else {
+      dados.criadoEm = firebase.firestore.FieldValue.serverTimestamp();
+      await db.collection('itens').add(dados);
+    }
+
+    toast('Kit salvo');
+    overlayKit.classList.remove('active');
+  }catch(err){
+    toast('Erro: '+err.message);
+  }finally{
+    btn.disabled = false;
+  }
+});
+
 /* ---------------- MODAL COMPRA ---------------- */
 const overlayCompra = document.getElementById('overlayCompra');
 let compraItemAtualId = null;
@@ -1059,7 +1294,7 @@ document.querySelectorAll('[data-close]').forEach(b=> b.addEventListener('click'
 overlayCompra.addEventListener('click', e=>{ if(e.target===overlayCompra) overlayCompra.classList.remove('active'); });
 
 function atualizarDatalist(){
-  document.getElementById('itensExistentes').innerHTML = itens.map(i=>`<option value="${escapeHtml(i.nome)}">`).join('');
+  document.getElementById('itensExistentes').innerHTML = itens.filter(i=> i.tipo!=='kit').map(i=>`<option value="${escapeHtml(i.nome)}">`).join('');
 }
 
 ['compraValor','compraQtd','compraNome'].forEach(idField=>{
@@ -1209,7 +1444,7 @@ function renderLinhasVenda(){
       <div class="line-top">
         <select data-idx="${idx}" class="sel-item">
           <option value="">Selecione o item</option>
-          ${itens.map(i=>`<option value="${i.id}" ${i.id===linha.itemId?'selected':''} ${i.estoqueAtual<=0?'disabled':''}>${escapeHtml(i.nome)} (${i.estoqueAtual} em estoque)</option>`).join('')}
+          ${itens.map(i=>`<option value="${i.id}" ${i.id===linha.itemId?'selected':''} ${i.estoqueAtual<=0?'disabled':''}>${escapeHtml(i.nome)}${i.tipo==='kit'?' (kit)':''} (${i.estoqueAtual} em estoque)</option>`).join('')}
         </select>
         <input type="number" min="1" data-idx="${idx}" class="qtd-item" value="${linha.quantidade}" placeholder="Qtd">
       </div>
@@ -1241,6 +1476,23 @@ document.getElementById('addLinhaVenda').addEventListener('click', ()=>{
 });
 renderLinhasVenda();
 
+/* Expande linhas de venda (que podem incluir kits) num mapa {itemId simples: quantidade total a baixar} */
+function expandirParaBaixaEstoque(linhas){
+  const baixas = {};
+  linhas.forEach(l=>{
+    const item = itens.find(i=>i.id===l.itemId);
+    if (!item) return;
+    if (item.tipo === 'kit' && Array.isArray(item.composicao)){
+      item.composicao.forEach(c=>{
+        baixas[c.itemId] = (baixas[c.itemId]||0) + (c.quantidade||1) * l.quantidade;
+      });
+    } else {
+      baixas[l.itemId] = (baixas[l.itemId]||0) + l.quantidade;
+    }
+  });
+  return baixas;
+}
+
 document.getElementById('btnRegistrarVenda').addEventListener('click', async ()=>{
   const cliente = document.getElementById('vendaCliente').value.trim();
   const linhasValidas = linhasVenda.filter(l=> l.itemId && l.quantidade>0);
@@ -1257,22 +1509,30 @@ document.getElementById('btnRegistrarVenda').addEventListener('click', async ()=
   btn.disabled = true;
   try{
     await db.runTransaction(async (tx)=>{
-      const refs = linhasValidas.map(l=> db.collection('itens').doc(l.itemId));
-      const docs = await Promise.all(refs.map(r=> tx.get(r)));
+      const baixas = expandirParaBaixaEstoque(linhasValidas);
+      const idsBaixa = Object.keys(baixas);
+      const refsBaixa = idsBaixa.map(id=> db.collection('itens').doc(id));
+      const docsBaixa = await Promise.all(refsBaixa.map(r=> tx.get(r)));
 
-      let valorTotalVenda = 0, custoTotalVenda = 0;
-      const itensVenda = linhasValidas.map((l, idx)=>{
-        const d = docs[idx].data();
-        if (d.estoqueAtual < l.quantidade) throw new Error(`Estoque insuficiente de "${d.nome}"`);
-        const valorTotal = round2(d.valorVenda * l.quantidade);
-        valorTotalVenda += valorTotal;
-        custoTotalVenda += d.custoUnitario * l.quantidade;
-        return {itemId: l.itemId, nome: d.nome, quantidade: l.quantidade, valorUnitario: d.valorVenda, custoUnitario: d.custoUnitario, valorTotal};
+      docsBaixa.forEach((d, idx)=>{
+        const data = d.data();
+        if (!data || (data.estoqueAtual||0) < baixas[idsBaixa[idx]]){
+          throw new Error(`Estoque insuficiente de "${data ? data.nome : idsBaixa[idx]}"`);
+        }
       });
 
-      refs.forEach((ref, idx)=>{
-        const d = docs[idx].data();
-        tx.update(ref, {estoqueAtual: d.estoqueAtual - linhasValidas[idx].quantidade});
+      let valorTotalVenda = 0, custoTotalVenda = 0;
+      const itensVenda = linhasValidas.map(l=>{
+        const item = itens.find(i=>i.id===l.itemId);
+        const valorTotal = round2(item.valorVenda * l.quantidade);
+        valorTotalVenda += valorTotal;
+        custoTotalVenda += item.custoUnitario * l.quantidade;
+        return {itemId: l.itemId, nome: item.nome, quantidade: l.quantidade, valorUnitario: item.valorVenda, custoUnitario: item.custoUnitario, valorTotal};
+      });
+
+      docsBaixa.forEach((d, idx)=>{
+        const data = d.data();
+        tx.update(refsBaixa[idx], {estoqueAtual: data.estoqueAtual - baixas[idsBaixa[idx]]});
       });
 
       const vendaRef = db.collection('vendas').doc();
@@ -1343,22 +1603,30 @@ async function confirmarPedido(id){
 
   try{
     await db.runTransaction(async (tx)=>{
-      const refs = pedido.itens.map(l=> db.collection('itens').doc(l.itemId));
-      const docs = await Promise.all(refs.map(r=> tx.get(r)));
+      const baixas = expandirParaBaixaEstoque(pedido.itens);
+      const idsBaixa = Object.keys(baixas);
+      const refsBaixa = idsBaixa.map(itemId=> db.collection('itens').doc(itemId));
+      const docsBaixa = await Promise.all(refsBaixa.map(r=> tx.get(r)));
 
-      let valorTotalVenda = 0, custoTotalVenda = 0;
-      const itensVenda = pedido.itens.map((l, idx)=>{
-        const d = docs[idx].data();
-        if (!d || d.estoqueAtual < l.quantidade) throw new Error(`Estoque insuficiente de "${l.nome}"`);
-        const valorTotal = round2(d.valorVenda * l.quantidade);
-        valorTotalVenda += valorTotal;
-        custoTotalVenda += d.custoUnitario * l.quantidade;
-        return {itemId: l.itemId, nome: d.nome, quantidade: l.quantidade, valorUnitario: d.valorVenda, custoUnitario: d.custoUnitario, valorTotal};
+      docsBaixa.forEach((d, idx)=>{
+        const data = d.data();
+        if (!data || (data.estoqueAtual||0) < baixas[idsBaixa[idx]]){
+          throw new Error(`Estoque insuficiente de "${data ? data.nome : idsBaixa[idx]}"`);
+        }
       });
 
-      refs.forEach((ref, idx)=>{
-        const d = docs[idx].data();
-        tx.update(ref, {estoqueAtual: d.estoqueAtual - pedido.itens[idx].quantidade});
+      let valorTotalVenda = 0, custoTotalVenda = 0;
+      const itensVenda = pedido.itens.map(l=>{
+        const item = itens.find(i=>i.id===l.itemId);
+        const valorTotal = round2((item?.valorVenda||l.valorUnitario||0) * l.quantidade);
+        valorTotalVenda += valorTotal;
+        custoTotalVenda += (item?.custoUnitario||0) * l.quantidade;
+        return {itemId: l.itemId, nome: item?.nome||l.nome, quantidade: l.quantidade, valorUnitario: item?.valorVenda||l.valorUnitario||0, custoUnitario: item?.custoUnitario||0, valorTotal};
+      });
+
+      docsBaixa.forEach((d, idx)=>{
+        const data = d.data();
+        tx.update(refsBaixa[idx], {estoqueAtual: data.estoqueAtual - baixas[idsBaixa[idx]]});
       });
 
       const vendaRef = db.collection('vendas').doc();
