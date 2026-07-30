@@ -623,10 +623,16 @@ if (configPendente) {
   /* ---------------- VITRINE PÚBLICA (visível sem login) ---------------- */
   let vitrineItens = [];
   let carrinho = {}; // { itemId: {nome, valorVenda, imagem, quantidade} }
-  db.collection('vitrine').orderBy('nome').onSnapshot(snap=>{
-    vitrineItens = snap.docs.map(d=>({id:d.id, ...d.data()}));
-    renderVitrinePublica();
-  }, err=> console.error('Erro ao carregar vitrine pública:', err));
+  function escutarVitrine(){
+    return db.collection('vitrine').orderBy('nome').onSnapshot(snap=>{
+      vitrineItens = snap.docs.map(d=>({id:d.id, ...d.data()}));
+      renderVitrinePublica();
+    }, err=>{
+      console.error('Erro ao carregar vitrine pública, reconectando em 3s:', err);
+      setTimeout(escutarVitrine, 3000);
+    });
+  }
+  escutarVitrine();
 
   function renderVitrinePublica(){
     const termo = (document.getElementById('buscaVitrine').value||'').toLowerCase();
@@ -862,27 +868,51 @@ let itens = [];
 let vendas = [];
 let pedidos = [];
 
-/* ---------------- FIRESTORE LISTENERS ---------------- */
-db.collection('itens').orderBy('nome').onSnapshot(snap=>{
-  itens = snap.docs.map(d=>({id:d.id, ...d.data()}));
-  recalcularKits();
-  renderItens();
-  renderResumo();
-  sincronizarVitrinePublica();
-  atualizarDatalist();
-  renderLinhasVenda(); // refresh selects if item list changes
-}, err=> toast('Erro ao carregar estoque: '+err.message));
+/* ---------------- FIRESTORE LISTENERS ----------------
+   Os listeners reconectam sozinhos se caírem por erro (ex: token de auth
+   ainda propagando, blip de rede). Sem isso, um erro passageiro "mata"
+   o listener e a tela só volta a atualizar com F5. */
+function escutarItens(){
+  return db.collection('itens').orderBy('nome').onSnapshot(snap=>{
+    itens = snap.docs.map(d=>({id:d.id, ...d.data()}));
+    recalcularKits();
+    renderItens();
+    renderResumo();
+    sincronizarVitrinePublica();
+    atualizarDatalist();
+    renderLinhasVenda(); // refresh selects if item list changes
+  }, err=>{
+    console.error('Erro ao carregar estoque, reconectando em 3s:', err);
+    toast('Erro ao carregar estoque: '+err.message);
+    setTimeout(escutarItens, 3000);
+  });
+}
+escutarItens();
 
-db.collection('vendas').orderBy('data','desc').onSnapshot(snap=>{
-  vendas = snap.docs.map(d=>({id:d.id, ...d.data()}));
-  renderVendas();
-  renderResumo();
-}, err=> toast('Erro ao carregar vendas: '+err.message));
+function escutarVendas(){
+  return db.collection('vendas').orderBy('data','desc').onSnapshot(snap=>{
+    vendas = snap.docs.map(d=>({id:d.id, ...d.data()}));
+    renderVendas();
+    renderResumo();
+  }, err=>{
+    console.error('Erro ao carregar vendas, reconectando em 3s:', err);
+    toast('Erro ao carregar vendas: '+err.message);
+    setTimeout(escutarVendas, 3000);
+  });
+}
+escutarVendas();
 
-db.collection('pedidos').orderBy('numero','desc').onSnapshot(snap=>{
-  pedidos = snap.docs.map(d=>({id:d.id, ...d.data()}));
-  renderPedidos();
-}, err=> toast('Erro ao carregar pedidos: '+err.message));
+function escutarPedidos(){
+  return db.collection('pedidos').orderBy('numero','desc').onSnapshot(snap=>{
+    pedidos = snap.docs.map(d=>({id:d.id, ...d.data()}));
+    renderPedidos();
+  }, err=>{
+    console.error('Erro ao carregar pedidos, reconectando em 3s:', err);
+    toast('Erro ao carregar pedidos: '+err.message);
+    setTimeout(escutarPedidos, 3000);
+  });
+}
+escutarPedidos();
 
 /* ---------------- RENDER: ESTOQUE ---------------- */
 function recalcularKits(){
