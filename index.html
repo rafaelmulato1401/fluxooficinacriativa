@@ -443,6 +443,38 @@
   </div>
 </div>
 
+<!-- MODAL EDITAR ITEM -->
+<div class="overlay" id="overlayEditar">
+  <div class="modal">
+    <button class="modal-close" data-close-editar>×</button>
+    <h3>Editar item</h3>
+    <div class="field"><label>Nome</label><input id="editNome" placeholder="Nome do item"></div>
+    <div class="field-row">
+      <div class="field"><label>Estoque atual</label><input id="editEstoque" type="number" inputmode="numeric"></div>
+      <div class="field"><label>Estoque mínimo (alerta)</label><input id="editEstoqueMinimo" type="number" inputmode="numeric"></div>
+    </div>
+    <div class="field-row">
+      <div class="field"><label>% de lucro</label><input id="editLucro" type="number" inputmode="decimal" placeholder="Ex: 40"></div>
+      <div class="field"><label>Ou valor de venda final</label><input id="editValorFinal" type="number" inputmode="decimal" placeholder="R$ 0,00"></div>
+    </div>
+    <div class="field">
+      <label>Foto do produto</label>
+      <input type="file" id="editImagem" accept="image/*">
+      <div id="editImagemPreviewWrap" style="display:none; align-items:center; gap:10px; margin-top:9px">
+        <img id="editImagemPreview" style="width:64px;height:64px;object-fit:cover;border-radius:10px;border:1px solid var(--line)">
+        <button type="button" class="btn small ghost" id="btnEditRemoverImagem">remover foto</button>
+      </div>
+    </div>
+    <div class="preview-box">
+      <div class="p"><div class="k">Custo un.</div><div class="v" id="editPrevCusto">R$ 0,00</div></div>
+      <div class="p"><div class="k">Venda un.</div><div class="v" id="editPrevVenda" style="color:var(--accent)">R$ 0,00</div></div>
+      <div class="p"><div class="k">Lucro/un.</div><div class="v" id="editPrevLucro" style="color:var(--good)">R$ 0,00</div></div>
+    </div>
+    <p style="font-size:11.5px;color:var(--text-faint);margin:2px 0 12px">O custo unitário só muda quando você repõe estoque com uma nova compra.</p>
+    <button class="btn primary" id="btnSalvarEdicao" style="width:100%;padding:13px">Salvar alterações</button>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 
@@ -625,30 +657,126 @@ function renderItens(){
       </div>
       <div class="item-actions">
         <button class="btn small" data-repor="${i.id}">Repor estoque</button>
-        <button class="btn small ghost" data-editar="${i.id}">Editar %</button>
+        <button class="btn small ghost" data-editar="${i.id}">Editar item</button>
         <button class="btn small danger" data-excluir="${i.id}">Excluir</button>
       </div>
     </div>`;
   }).join('');
 
   lista.querySelectorAll('[data-repor]').forEach(b=> b.addEventListener('click', ()=> abrirModalCompra(b.dataset.repor)));
-  lista.querySelectorAll('[data-editar]').forEach(b=> b.addEventListener('click', ()=> editarLucro(b.dataset.editar)));
+  lista.querySelectorAll('[data-editar]').forEach(b=> b.addEventListener('click', ()=> abrirModalEditar(b.dataset.editar)));
   lista.querySelectorAll('[data-excluir]').forEach(b=> b.addEventListener('click', ()=> excluirItem(b.dataset.excluir)));
 }
 document.getElementById('buscaItem').addEventListener('input', renderItens);
 
 function escapeHtml(s){ return (s||'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 
-async function editarLucro(id){
+/* ---------------- MODAL EDITAR ITEM ---------------- */
+const overlayEditar = document.getElementById('overlayEditar');
+let editItemId = null;
+let editCampoEditadoPorUltimo = 'lucro';
+let editImagemDataUrl = undefined; // undefined = não mexeu | null = removida | string = nova foto
+
+function abrirModalEditar(id){
   const item = itens.find(i=>i.id===id);
-  const novo = prompt(`Nova % de lucro para "${item.nome}" (atual: ${item.percentualLucro}%)`, item.percentualLucro);
-  if (novo===null) return;
-  const pct = parseFloat(novo.replace(',','.'));
-  if (isNaN(pct)) return toast('Valor inválido');
-  const valorVenda = round2(item.custoUnitario * (1+pct/100));
-  await db.collection('itens').doc(id).update({percentualLucro:pct, valorVenda, atualizadoEm: firebase.firestore.FieldValue.serverTimestamp()});
-  toast('Percentual atualizado');
+  if (!item) return;
+  editItemId = id;
+  editCampoEditadoPorUltimo = 'lucro';
+  editImagemDataUrl = undefined;
+
+  document.getElementById('editNome').value = item.nome;
+  document.getElementById('editEstoque').value = item.estoqueAtual;
+  document.getElementById('editEstoqueMinimo').value = item.estoqueMinimo ?? 3;
+  document.getElementById('editLucro').value = round2(item.percentualLucro||0);
+  document.getElementById('editValorFinal').value = round2(item.valorVenda||0);
+
+  const previewWrap = document.getElementById('editImagemPreviewWrap');
+  const previewImg = document.getElementById('editImagemPreview');
+  document.getElementById('editImagem').value = '';
+  if (item.imagem){
+    previewImg.src = item.imagem;
+    previewWrap.style.display = 'flex';
+  } else {
+    previewWrap.style.display = 'none';
+  }
+
+  atualizarPreviewEdicao();
+  overlayEditar.classList.add('active');
 }
+document.querySelectorAll('[data-close-editar]').forEach(b=> b.addEventListener('click', ()=> overlayEditar.classList.remove('active')));
+overlayEditar.addEventListener('click', e=>{ if(e.target===overlayEditar) overlayEditar.classList.remove('active'); });
+
+document.getElementById('editLucro').addEventListener('input', ()=>{ editCampoEditadoPorUltimo='lucro'; atualizarPreviewEdicao(); });
+document.getElementById('editValorFinal').addEventListener('input', ()=>{ editCampoEditadoPorUltimo='valorFinal'; atualizarPreviewEdicao(); });
+
+function atualizarPreviewEdicao(){
+  const item = itens.find(i=>i.id===editItemId);
+  if (!item) return;
+  const custoUnit = item.custoUnitario||0;
+  let lucro, venda;
+  if (editCampoEditadoPorUltimo === 'valorFinal'){
+    venda = parseFloat((document.getElementById('editValorFinal').value||'0').replace(',','.'))||0;
+    lucro = custoUnit > 0 ? ((venda/custoUnit)-1)*100 : 0;
+    document.getElementById('editLucro').value = custoUnit > 0 ? round2(lucro) : '';
+  } else {
+    lucro = parseFloat((document.getElementById('editLucro').value||'0').replace(',','.'))||0;
+    venda = custoUnit * (1+lucro/100);
+    document.getElementById('editValorFinal').value = venda > 0 ? round2(venda) : '';
+  }
+  document.getElementById('editPrevCusto').textContent = fmt(custoUnit);
+  document.getElementById('editPrevVenda').textContent = fmt(venda);
+  document.getElementById('editPrevLucro').textContent = fmt(venda-custoUnit);
+}
+
+document.getElementById('editImagem').addEventListener('change', async (e)=>{
+  const file = e.target.files[0];
+  if (!file) return;
+  try{
+    editImagemDataUrl = await comprimirImagem(file);
+    document.getElementById('editImagemPreview').src = editImagemDataUrl;
+    document.getElementById('editImagemPreviewWrap').style.display = 'flex';
+  }catch(err){
+    toast('Erro ao processar a foto: '+err.message);
+  }
+});
+document.getElementById('btnEditRemoverImagem').addEventListener('click', ()=>{
+  editImagemDataUrl = null;
+  document.getElementById('editImagem').value = '';
+  document.getElementById('editImagemPreviewWrap').style.display = 'none';
+});
+
+document.getElementById('btnSalvarEdicao').addEventListener('click', async ()=>{
+  const nome = document.getElementById('editNome').value.trim();
+  const estoqueAtual = parseFloat((document.getElementById('editEstoque').value||'').replace(',','.'));
+  const estoqueMinimo = parseFloat((document.getElementById('editEstoqueMinimo').value||'3').replace(',','.'))||3;
+  const lucro = parseFloat((document.getElementById('editLucro').value||'').replace(',','.'));
+
+  if (!nome) return toast('Informe o nome do item');
+  if (isNaN(estoqueAtual) || estoqueAtual < 0) return toast('Informe um estoque válido');
+  if (isNaN(lucro)) return toast('Informe a % de lucro ou o valor de venda final');
+
+  const item = itens.find(i=>i.id===editItemId);
+  const valorVenda = round2((item.custoUnitario||0) * (1+lucro/100));
+
+  const btn = document.getElementById('btnSalvarEdicao');
+  btn.disabled = true;
+  try{
+    const dados = {
+      nome, estoqueAtual, estoqueMinimo,
+      percentualLucro: lucro, valorVenda,
+      atualizadoEm: firebase.firestore.FieldValue.serverTimestamp()
+    };
+    if (editImagemDataUrl !== undefined) dados.imagem = editImagemDataUrl;
+
+    await db.collection('itens').doc(editItemId).update(dados);
+    toast('Item atualizado');
+    overlayEditar.classList.remove('active');
+  }catch(err){
+    toast('Erro: '+err.message);
+  }finally{
+    btn.disabled = false;
+  }
+});
 
 async function excluirItem(id){
   const item = itens.find(i=>i.id===id);
