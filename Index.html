@@ -1,0 +1,892 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>Oficina Criativa — Gestão</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#17140F">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#17140F;
+    --surface:#221D17;
+    --surface-2:#2B2418;
+    --surface-3:#342C1D;
+    --line:#3D3424;
+    --text:#F3EAD9;
+    --text-dim:#B4A78D;
+    --text-faint:#7C7360;
+    --accent:#E8933C;
+    --accent-dim:#C97A2E;
+    --accent-soft:rgba(232,147,60,.14);
+    --copper:#C65D3B;
+    --good:#8AB06E;
+    --good-soft:rgba(138,176,110,.14);
+    --warn:#E4B65A;
+    --warn-soft:rgba(228,182,90,.14);
+    --bad:#D0604A;
+    --bad-soft:rgba(208,96,74,.14);
+    --radius:14px;
+    --radius-sm:9px;
+    --font-display:'Fraunces',serif;
+    --font-body:'Inter',sans-serif;
+    --font-mono:'JetBrains Mono',monospace;
+    --shadow:0 8px 28px rgba(0,0,0,.35);
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--bg);
+    color:var(--text);
+    font-family:var(--font-body);
+    -webkit-font-smoothing:antialiased;
+    min-height:100vh;
+    padding-bottom:calc(72px + env(safe-area-inset-bottom));
+  }
+  body::before{
+    content:"";
+    position:fixed; inset:0;
+    background:
+      radial-gradient(1200px 500px at 15% -10%, rgba(232,147,60,.07), transparent 60%),
+      radial-gradient(900px 500px at 100% 10%, rgba(198,93,59,.06), transparent 55%);
+    pointer-events:none; z-index:0;
+  }
+  ::selection{background:var(--accent-soft); color:var(--text);}
+  h1,h2,h3{font-family:var(--font-display); margin:0; font-weight:600; letter-spacing:.2px;}
+  .mono{font-family:var(--font-mono);}
+  button{font-family:inherit; cursor:pointer;}
+  input,select{font-family:inherit;}
+
+  /* dashed "laser path" divider — signature element */
+  .cut-line{
+    height:2px; width:100%; margin:14px 0;
+    background-image:repeating-linear-gradient(90deg, var(--accent) 0 6px, transparent 6px 13px);
+    opacity:.55; position:relative;
+  }
+  .cut-line::before,.cut-line::after{
+    content:""; position:absolute; top:50%; width:4px; height:4px; border-radius:50%;
+    background:var(--accent); transform:translateY(-50%);
+  }
+  .cut-line::before{left:0;} .cut-line::after{right:0;}
+
+  /* ---------- Header ---------- */
+  header.top{
+    position:sticky; top:0; z-index:20;
+    display:flex; align-items:center; gap:12px;
+    padding:16px 18px 14px;
+    background:linear-gradient(180deg, var(--bg) 70%, transparent);
+    backdrop-filter:blur(6px);
+  }
+  .logo-mark{width:38px; height:38px; flex:none;}
+  .logo-mark path{
+    fill:none; stroke:var(--accent); stroke-width:6; stroke-linecap:round; stroke-linejoin:round;
+    stroke-dasharray:220; stroke-dashoffset:220;
+    animation:trace 1.4s ease-out forwards;
+  }
+  @keyframes trace{to{stroke-dashoffset:0;}}
+  .brand h1{font-size:19px; line-height:1.1;}
+  .brand span{display:block; font-size:11px; color:var(--text-faint); letter-spacing:.08em; text-transform:uppercase; margin-top:2px;}
+
+  main{position:relative; z-index:1; max-width:1180px; margin:0 auto; padding:0 16px 40px;}
+  .view{display:none; animation:fade .25s ease;}
+  .view.active{display:block;}
+  @keyframes fade{from{opacity:0; transform:translateY(4px);} to{opacity:1; transform:none;}}
+
+  .view-head{display:flex; align-items:baseline; justify-content:space-between; gap:12px; margin:6px 0 4px;}
+  .view-head h2{font-size:22px;}
+  .view-head .hint{font-size:12.5px; color:var(--text-faint);}
+
+  /* ---------- Summary cards ---------- */
+  .stat-grid{display:grid; grid-template-columns:repeat(2,1fr); gap:10px; margin:14px 0 18px;}
+  .stat-card{
+    background:var(--surface); border:1px solid var(--line); border-radius:var(--radius);
+    padding:14px; position:relative; overflow:hidden;
+  }
+  .stat-card .label{font-size:11.5px; color:var(--text-faint); text-transform:uppercase; letter-spacing:.06em;}
+  .stat-card .value{font-family:var(--font-mono); font-size:20px; font-weight:600; margin-top:6px; color:var(--text);}
+  .stat-card.accent .value{color:var(--accent);}
+  .stat-card.good .value{color:var(--good);}
+
+  /* ---------- Search / toolbar ---------- */
+  .toolbar{display:flex; gap:8px; margin:10px 0 14px;}
+  .search{
+    flex:1; background:var(--surface); border:1px solid var(--line); border-radius:var(--radius-sm);
+    padding:11px 13px; color:var(--text); font-size:14px;
+  }
+  .search::placeholder{color:var(--text-faint);}
+  .search:focus{outline:none; border-color:var(--accent-dim);}
+
+  /* ---------- Item cards ---------- */
+  .item-list{display:flex; flex-direction:column; gap:9px;}
+  .item-card{
+    background:var(--surface); border:1px solid var(--line); border-radius:var(--radius);
+    padding:13px 14px; display:flex; flex-direction:column; gap:8px;
+  }
+  .item-card .row1{display:flex; justify-content:space-between; align-items:flex-start; gap:10px;}
+  .item-card .nome{font-family:var(--font-display); font-size:16.5px; font-weight:600;}
+  .badge{
+    font-family:var(--font-mono); font-size:11.5px; padding:3px 8px; border-radius:20px;
+    white-space:nowrap; font-weight:600;
+  }
+  .badge.good{background:var(--good-soft); color:var(--good);}
+  .badge.warn{background:var(--warn-soft); color:var(--warn);}
+  .badge.bad{background:var(--bad-soft); color:var(--bad);}
+  .item-card .figures{display:grid; grid-template-columns:repeat(3,1fr); gap:8px;}
+  .fig{background:var(--surface-2); border-radius:var(--radius-sm); padding:8px 9px;}
+  .fig .k{font-size:10.5px; color:var(--text-faint); text-transform:uppercase; letter-spacing:.05em;}
+  .fig .v{font-family:var(--font-mono); font-size:14.5px; margin-top:3px; color:var(--text);}
+  .item-actions{display:flex; gap:8px; margin-top:2px;}
+  .item-actions button{flex:1;}
+
+  /* ---------- Buttons ---------- */
+  .btn{
+    border:1px solid var(--line); background:var(--surface-2); color:var(--text);
+    padding:10px 14px; border-radius:var(--radius-sm); font-size:13.5px; font-weight:600;
+    transition:border-color .15s, background .15s;
+  }
+  .btn:hover{border-color:var(--accent-dim);}
+  .btn.primary{background:var(--accent); border-color:var(--accent); color:#1B1206;}
+  .btn.primary:hover{background:var(--accent-dim);}
+  .btn.ghost{background:transparent;}
+  .btn.danger{color:var(--bad); border-color:transparent; background:transparent;}
+  .btn.small{padding:7px 10px; font-size:12.5px;}
+  .btn:disabled{opacity:.4; cursor:not-allowed;}
+
+  .fab{
+    position:fixed; right:18px; bottom:calc(84px + env(safe-area-inset-bottom)); z-index:25;
+    width:56px; height:56px; border-radius:50%; background:var(--accent); color:#1B1206;
+    border:none; font-size:26px; box-shadow:var(--shadow); display:flex; align-items:center; justify-content:center;
+  }
+
+  /* ---------- Bottom nav (mobile) ---------- */
+  nav.tabbar{
+    position:fixed; left:0; right:0; bottom:0; z-index:30;
+    display:flex; background:var(--surface); border-top:1px solid var(--line);
+    padding:6px 6px calc(6px + env(safe-area-inset-bottom));
+  }
+  nav.tabbar button{
+    flex:1; background:none; border:none; color:var(--text-faint);
+    display:flex; flex-direction:column; align-items:center; gap:3px;
+    font-size:10.5px; padding:6px 2px; border-radius:10px;
+  }
+  nav.tabbar button svg{width:20px; height:20px; stroke:currentColor; fill:none; stroke-width:1.8;}
+  nav.tabbar button.active{color:var(--accent);}
+  nav.tabbar button.active svg{stroke:var(--accent);}
+
+  /* ---------- Sale builder ---------- */
+  .card{background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); padding:16px;}
+  .field{margin-bottom:12px;}
+  .field label{display:block; font-size:12px; color:var(--text-dim); margin-bottom:6px; letter-spacing:.02em;}
+  .field input, .field select{
+    width:100%; background:var(--surface-2); border:1px solid var(--line); color:var(--text);
+    padding:11px 12px; border-radius:var(--radius-sm); font-size:14.5px;
+  }
+  .field input:focus, .field select:focus{outline:none; border-color:var(--accent-dim);}
+  .field-row{display:grid; grid-template-columns:1fr 1fr; gap:10px;}
+
+  .sale-line{
+    background:var(--surface-2); border:1px solid var(--line); border-radius:var(--radius-sm);
+    padding:11px; margin-bottom:8px;
+  }
+  .sale-line .line-top{display:grid; grid-template-columns:1fr 78px; gap:8px;}
+  .sale-line .line-bottom{display:flex; justify-content:space-between; align-items:center; margin-top:8px;}
+  .sale-line .line-total{font-family:var(--font-mono); font-weight:600; color:var(--accent);}
+  .sale-line .remove{color:var(--text-faint); background:none; border:none; font-size:12px;}
+  .add-line-btn{width:100%; border:1px dashed var(--line); background:none; color:var(--text-dim); padding:10px; border-radius:var(--radius-sm); font-size:13px;}
+
+  .grand-total{
+    display:flex; justify-content:space-between; align-items:center; margin:16px 0;
+    padding:14px 16px; background:var(--accent-soft); border:1px solid var(--accent-dim); border-radius:var(--radius);
+  }
+  .grand-total .k{font-size:12.5px; color:var(--text-dim); text-transform:uppercase; letter-spacing:.05em;}
+  .grand-total .v{font-family:var(--font-mono); font-size:24px; font-weight:700; color:var(--accent);}
+
+  /* ---------- Sales history ---------- */
+  .sale-card{background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); padding:13px 14px; margin-bottom:9px;}
+  .sale-card .head{display:flex; justify-content:space-between; align-items:baseline;}
+  .sale-card .cliente{font-family:var(--font-display); font-size:16px; font-weight:600;}
+  .sale-card .date{font-size:11px; color:var(--text-faint);}
+  .sale-card .chips{display:flex; flex-wrap:wrap; gap:6px; margin-top:8px;}
+  .chip{background:var(--surface-2); border-radius:20px; padding:4px 10px; font-size:12px; color:var(--text-dim);}
+  .sale-card .foot{display:flex; justify-content:space-between; align-items:center; margin-top:10px;}
+  .sale-card .total{font-family:var(--font-mono); font-weight:700; color:var(--accent); font-size:16px;}
+
+  .empty{text-align:center; padding:50px 20px; color:var(--text-faint);}
+  .empty svg{width:44px; height:44px; stroke:var(--text-faint); margin-bottom:10px;}
+
+  /* ---------- Modal ---------- */
+  .overlay{
+    position:fixed; inset:0; background:rgba(10,8,5,.6); backdrop-filter:blur(2px);
+    display:none; align-items:flex-end; justify-content:center; z-index:50;
+  }
+  .overlay.active{display:flex;}
+  .modal{
+    background:var(--surface); border:1px solid var(--line); border-radius:20px 20px 0 0;
+    width:100%; max-width:520px; max-height:88vh; overflow-y:auto; padding:20px 18px calc(20px + env(safe-area-inset-bottom));
+    animation:slideup .22s ease;
+  }
+  @keyframes slideup{from{transform:translateY(30px); opacity:0;} to{transform:none; opacity:1;}}
+  .modal h3{font-size:18px; margin-bottom:14px;}
+  .modal-close{position:absolute; top:16px; right:16px; background:none; border:none; color:var(--text-faint); font-size:20px;}
+  .preview-box{background:var(--surface-2); border-radius:var(--radius-sm); padding:12px; display:flex; justify-content:space-between; margin:14px 0;}
+  .preview-box .p{text-align:center;}
+  .preview-box .p .k{font-size:10.5px; color:var(--text-faint); text-transform:uppercase;}
+  .preview-box .p .v{font-family:var(--font-mono); font-size:15px; margin-top:4px;}
+
+  .toast{
+    position:fixed; bottom:96px; left:50%; transform:translateX(-50%) translateY(20px);
+    background:var(--surface-3); border:1px solid var(--accent-dim); color:var(--text);
+    padding:11px 18px; border-radius:30px; font-size:13.5px; opacity:0; pointer-events:none;
+    transition:opacity .2s, transform .2s; z-index:60; box-shadow:var(--shadow);
+  }
+  .toast.show{opacity:1; transform:translateX(-50%) translateY(0);}
+
+  /* ---------- Setup screen ---------- */
+  .setup{max-width:560px; margin:60px auto; padding:0 18px;}
+  .setup ol{padding-left:20px; color:var(--text-dim); font-size:14px; line-height:1.9;}
+  .setup code{background:var(--surface-2); padding:2px 6px; border-radius:5px; font-family:var(--font-mono); font-size:12.5px;}
+
+  /* ---------- Desktop layout ---------- */
+  @media (min-width:880px){
+    body{padding-bottom:0;}
+    .app-shell{display:flex; min-height:100vh;}
+    nav.tabbar{
+      position:sticky; top:0; left:0; flex-direction:column; width:220px; height:100vh;
+      border-top:none; border-right:1px solid var(--line); padding:20px 12px; gap:4px;
+    }
+    nav.tabbar button{flex-direction:row; justify-content:flex-start; gap:10px; font-size:13.5px; padding:11px 12px;}
+    header.top{position:static; background:none; backdrop-filter:none; max-width:900px; margin:0 auto; padding:28px 32px 0;}
+    main{flex:1; max-width:900px; padding:8px 32px 60px; margin:0;}
+    .fab{right:36px; bottom:36px;}
+    .stat-grid{grid-template-columns:repeat(4,1fr);}
+    .field-row.desktop-3{grid-template-columns:1fr 1fr 1fr;}
+    .item-list{display:grid; grid-template-columns:repeat(2,1fr); gap:10px;}
+  }
+</style>
+</head>
+<body>
+
+<div id="setupScreen" class="setup" style="display:none">
+  <svg class="logo-mark" viewBox="0 0 60 60" style="width:44px;height:44px;margin-bottom:10px"><path d="M8 46 L8 14 L30 14 L30 46 M30 30 L52 14 L52 46 L30 30"/></svg>
+  <h2 style="font-size:22px;margin-bottom:10px">Configurar o Firebase</h2>
+  <p style="color:var(--text-dim);font-size:14px;line-height:1.6">Para os dados sincronizarem entre o celular e o PC, este app precisa de um projeto Firebase (gratuito). Faça isso uma única vez:</p>
+  <ol>
+    <li>Acesse <code>console.firebase.google.com</code> e crie um projeto novo.</li>
+    <li>No menu, abra <code>Firestore Database</code> → <code>Criar banco de dados</code> → modo produção.</li>
+    <li>Em <code>Regras</code>, cole uma regra simples de leitura/escrita (posso te ajudar a travar depois).</li>
+    <li>Vá em <code>Configurações do projeto</code> → role até <code>Seus apps</code> → crie um app Web.</li>
+    <li>Copie o objeto <code>firebaseConfig</code> gerado e me envie — eu já coloco no arquivo pra você.</li>
+  </ol>
+  <p style="color:var(--text-faint);font-size:12.5px;margin-top:14px">Assim que colocar suas credenciais no código (variável <code>firebaseConfig</code> no início do script), essa tela some sozinha.</p>
+</div>
+
+<div id="loginScreen" class="setup" style="display:none; max-width:380px;">
+  <svg class="logo-mark" viewBox="0 0 60 60" style="width:44px;height:44px;margin-bottom:14px"><path d="M8 46 L8 14 L30 14 L30 46 M30 30 L52 14 L52 46 L30 30"/></svg>
+  <h2 style="font-size:22px;margin-bottom:16px">Entrar</h2>
+  <div class="field"><label>E-mail</label><input id="loginEmail" type="email" placeholder="seu@email.com" autocomplete="username"></div>
+  <div class="field"><label>Senha</label><input id="loginSenha" type="password" placeholder="Senha" autocomplete="current-password"></div>
+  <button class="btn primary" id="btnLogin" style="width:100%;padding:13px">Entrar</button>
+  <button class="btn ghost" id="btnResetSenha" style="width:100%;margin-top:8px">Esqueci minha senha</button>
+  <p id="loginErro" style="color:var(--bad); font-size:13px; margin-top:12px; display:none"></p>
+</div>
+
+<div id="appShell" class="app-shell" style="display:none">
+  <nav class="tabbar">
+    <button data-view="estoque" class="active">
+      <svg viewBox="0 0 24 24"><path d="M3 7l9-4 9 4-9 4-9-4z"/><path d="M3 7v10l9 4 9-4V7"/><path d="M12 11v10"/></svg>
+      Estoque
+    </button>
+    <button data-view="venda">
+      <svg viewBox="0 0 24 24"><path d="M6 2l1.5 4h9L18 2"/><path d="M3.5 6h17l-1.6 11.2a2 2 0 01-2 1.8H7.1a2 2 0 01-2-1.8L3.5 6z"/><circle cx="9" cy="21" r="1"/><circle cx="15" cy="21" r="1"/></svg>
+      Nova venda
+    </button>
+    <button data-view="vendas">
+      <svg viewBox="0 0 24 24"><path d="M4 4h16v4H4z"/><path d="M6 8v12h12V8"/><path d="M9 12h6"/></svg>
+      Vendas
+    </button>
+    <button data-view="resumo">
+      <svg viewBox="0 0 24 24"><path d="M4 20V10"/><path d="M11 20V4"/><path d="M18 20v-7"/></svg>
+      Resumo
+    </button>
+  </nav>
+
+  <div style="flex:1">
+    <header class="top">
+      <svg class="logo-mark" viewBox="0 0 60 60"><path d="M8 46 L8 14 L30 14 L30 46 M30 30 L52 14 L52 46 L30 30"/></svg>
+      <div class="brand"><h1>Oficina Criativa</h1><span>Estoque &amp; Vendas</span></div>
+      <button id="btnLogout" class="btn small ghost" style="margin-left:auto">Sair</button>
+    </header>
+
+    <main>
+      <!-- ESTOQUE -->
+      <section class="view active" id="view-estoque">
+        <div class="view-head"><h2>Estoque</h2><span class="hint" id="totalItensHint">0 itens</span></div>
+        <div class="stat-grid">
+          <div class="stat-card"><div class="label">Investido em estoque</div><div class="value mono" id="statInvestido">R$ 0,00</div></div>
+          <div class="stat-card accent"><div class="label">Valor de venda do estoque</div><div class="value mono" id="statPotencial">R$ 0,00</div></div>
+        </div>
+        <div class="toolbar"><input class="search" id="buscaItem" placeholder="Buscar item..."></div>
+        <div class="item-list" id="listaItens"></div>
+      </section>
+
+      <!-- NOVA VENDA -->
+      <section class="view" id="view-venda">
+        <div class="view-head"><h2>Nova venda</h2></div>
+        <div class="card">
+          <div class="field"><label>Cliente</label><input id="vendaCliente" placeholder="Nome do cliente"></div>
+          <label style="display:block;font-size:12px;color:var(--text-dim);margin-bottom:8px">Itens da venda</label>
+          <div id="linhasVenda"></div>
+          <button class="add-line-btn" id="addLinhaVenda">+ adicionar item</button>
+        </div>
+        <div class="grand-total"><span class="k">Total da venda</span><span class="v mono" id="totalVendaValor">R$ 0,00</span></div>
+        <button class="btn primary" id="btnRegistrarVenda" style="width:100%;padding:14px;font-size:14.5px">Registrar venda</button>
+      </section>
+
+      <!-- HISTÓRICO DE VENDAS -->
+      <section class="view" id="view-vendas">
+        <div class="view-head"><h2>Vendas</h2><span class="hint" id="totalVendasHint"></span></div>
+        <div class="item-list" style="display:flex;flex-direction:column" id="listaVendas"></div>
+      </section>
+
+      <!-- RESUMO -->
+      <section class="view" id="view-resumo">
+        <div class="view-head"><h2>Resumo</h2></div>
+        <div class="stat-grid">
+          <div class="stat-card"><div class="label">Investido em estoque</div><div class="value mono" id="rInvestido">R$ 0</div></div>
+          <div class="stat-card accent"><div class="label">Lucro potencial em estoque</div><div class="value mono" id="rLucroPotencial">R$ 0</div></div>
+          <div class="stat-card good"><div class="label">Total vendido</div><div class="value mono" id="rTotalVendido">R$ 0</div></div>
+          <div class="stat-card good"><div class="label">Lucro realizado</div><div class="value mono" id="rLucroRealizado">R$ 0</div></div>
+        </div>
+        <div class="cut-line"></div>
+        <h3 style="font-size:15px;margin-bottom:10px">Estoque baixo</h3>
+        <div class="item-list" id="listaBaixoEstoque"></div>
+      </section>
+    </main>
+  </div>
+</div>
+
+<button class="fab" id="fabAdd" title="Nova compra / item">+</button>
+
+<!-- MODAL COMPRA / ITEM -->
+<div class="overlay" id="overlayCompra">
+  <div class="modal">
+    <button class="modal-close" data-close>×</button>
+    <h3 id="modalCompraTitulo">Nova compra</h3>
+    <div class="field">
+      <label>Item</label>
+      <input list="itensExistentes" id="compraNome" placeholder="Nome do item (novo ou existente)">
+      <datalist id="itensExistentes"></datalist>
+    </div>
+    <div class="field-row">
+      <div class="field"><label>Valor total pago</label><input id="compraValor" type="number" inputmode="decimal" placeholder="R$ 0,00"></div>
+      <div class="field"><label>Quantidade comprada</label><input id="compraQtd" type="number" inputmode="numeric" placeholder="0"></div>
+    </div>
+    <div class="field-row">
+      <div class="field"><label>% de lucro</label><input id="compraLucro" type="number" inputmode="decimal" placeholder="Ex: 40"></div>
+      <div class="field"><label>Estoque mínimo (alerta)</label><input id="compraEstoqueMinimo" type="number" inputmode="numeric" placeholder="3"></div>
+    </div>
+    <div class="preview-box">
+      <div class="p"><div class="k">Custo unit.</div><div class="v" id="prevCusto">R$ 0,00</div></div>
+      <div class="p"><div class="k">Venda unit.</div><div class="v" id="prevVenda" style="color:var(--accent)">R$ 0,00</div></div>
+      <div class="p"><div class="k">Lucro/un.</div><div class="v" id="prevLucro" style="color:var(--good)">R$ 0,00</div></div>
+    </div>
+    <button class="btn primary" id="btnSalvarCompra" style="width:100%;padding:13px">Salvar</button>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script>
+/* =========================================================
+   CONFIGURAÇÃO DO FIREBASE
+   Troque pelos dados do SEU projeto (console.firebase.google.com
+   → Configurações do projeto → Seus apps → Web).
+   Enquanto estiver com os valores de exemplo, o app mostra
+   a tela de instruções de configuração.
+========================================================= */
+const firebaseConfig = {
+  apiKey: "AIzaSyC9LmT-ETXw2FqMwoIlgCGJOePOjB1T8IU",
+  authDomain: "fluxocaixaoficinacriativa.firebaseapp.com",
+  projectId: "fluxocaixaoficinacriativa",
+  storageBucket: "fluxocaixaoficinacriativa.firebasestorage.app",
+  messagingSenderId: "5608004550",
+  appId: "1:5608004550:web:870824a76ac4dc26c430c7"
+};
+
+const configPendente = firebaseConfig.apiKey === "SUA_API_KEY";
+
+const fmt = (n) => (Number(n)||0).toLocaleString('pt-BR', {style:'currency', currency:'BRL'});
+const toast = (msg) => {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.classList.add('show');
+  clearTimeout(toast._t); toast._t = setTimeout(()=>t.classList.remove('show'), 2400);
+};
+
+if (configPendente) {
+  document.getElementById('setupScreen').style.display = 'block';
+} else {
+  firebase.initializeApp(firebaseConfig);
+  const auth = firebase.auth();
+  let appIniciado = false;
+
+  auth.onAuthStateChanged(user=>{
+    if (user){
+      document.getElementById('loginScreen').style.display = 'none';
+      document.getElementById('appShell').style.display = 'flex';
+      document.getElementById('fabAdd').style.display = 'flex';
+      if (!appIniciado){ appIniciado = true; iniciarApp(); }
+    } else {
+      document.getElementById('appShell').style.display = 'none';
+      document.getElementById('fabAdd').style.display = 'none';
+      document.getElementById('loginScreen').style.display = 'block';
+    }
+  });
+
+  document.getElementById('btnLogin').addEventListener('click', fazerLogin);
+  document.getElementById('loginSenha').addEventListener('keydown', e=>{ if(e.key==='Enter') fazerLogin(); });
+
+  async function fazerLogin(){
+    const email = document.getElementById('loginEmail').value.trim();
+    const senha = document.getElementById('loginSenha').value;
+    const erroEl = document.getElementById('loginErro');
+    erroEl.style.display = 'none';
+    if (!email || !senha){ erroEl.textContent = 'Preencha e-mail e senha.'; erroEl.style.display = 'block'; return; }
+    const btn = document.getElementById('btnLogin');
+    btn.disabled = true;
+    try{
+      await auth.signInWithEmailAndPassword(email, senha);
+    }catch(err){
+      erroEl.textContent = traduzErroAuth(err.code);
+      erroEl.style.display = 'block';
+    }finally{
+      btn.disabled = false;
+    }
+  }
+
+  document.getElementById('btnResetSenha').addEventListener('click', async ()=>{
+    const email = document.getElementById('loginEmail').value.trim();
+    const erroEl = document.getElementById('loginErro');
+    if (!email){ erroEl.textContent = 'Digite seu e-mail acima antes de clicar aqui.'; erroEl.style.display = 'block'; return; }
+    try{
+      await auth.sendPasswordResetEmail(email);
+      erroEl.style.color = 'var(--good)';
+      erroEl.textContent = 'E-mail de redefinição enviado.';
+      erroEl.style.display = 'block';
+    }catch(err){
+      erroEl.style.color = 'var(--bad)';
+      erroEl.textContent = traduzErroAuth(err.code);
+      erroEl.style.display = 'block';
+    }
+  });
+
+  function traduzErroAuth(code){
+    const map = {
+      'auth/invalid-email':'E-mail inválido.',
+      'auth/user-not-found':'Usuário não encontrado.',
+      'auth/wrong-password':'Senha incorreta.',
+      'auth/invalid-credential':'E-mail ou senha incorretos.',
+      'auth/too-many-requests':'Muitas tentativas. Tente novamente em instantes.'
+    };
+    return map[code] || 'Não foi possível entrar. Verifique os dados.';
+  }
+
+  document.getElementById('btnLogout').addEventListener('click', ()=> auth.signOut());
+}
+
+function iniciarApp(){
+
+const db = firebase.firestore();
+
+let itens = [];
+let vendas = [];
+
+/* ---------------- NAVIGATION ---------------- */
+document.querySelectorAll('nav.tabbar button').forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    document.querySelectorAll('nav.tabbar button').forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active');
+    document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
+    document.getElementById('view-'+btn.dataset.view).classList.add('active');
+  });
+});
+
+/* ---------------- FIRESTORE LISTENERS ---------------- */
+db.collection('itens').orderBy('nome').onSnapshot(snap=>{
+  itens = snap.docs.map(d=>({id:d.id, ...d.data()}));
+  renderItens();
+  renderResumo();
+  atualizarDatalist();
+  renderLinhasVenda(); // refresh selects if item list changes
+}, err=> toast('Erro ao carregar estoque: '+err.message));
+
+db.collection('vendas').orderBy('data','desc').onSnapshot(snap=>{
+  vendas = snap.docs.map(d=>({id:d.id, ...d.data()}));
+  renderVendas();
+  renderResumo();
+}, err=> toast('Erro ao carregar vendas: '+err.message));
+
+/* ---------------- RENDER: ESTOQUE ---------------- */
+function statusEstoque(item){
+  const min = item.estoqueMinimo ?? 3;
+  if (item.estoqueAtual <= 0) return 'bad';
+  if (item.estoqueAtual <= min) return 'warn';
+  return 'good';
+}
+
+function renderItens(){
+  const termo = (document.getElementById('buscaItem').value||'').toLowerCase();
+  const filtrados = itens.filter(i=> i.nome.toLowerCase().includes(termo));
+  const lista = document.getElementById('listaItens');
+  document.getElementById('totalItensHint').textContent = itens.length + (itens.length===1?' item':' itens');
+
+  let investido = 0, potencial = 0;
+  itens.forEach(i=>{ investido += (i.custoUnitario||0)*(i.estoqueAtual||0); potencial += (i.valorVenda||0)*(i.estoqueAtual||0); });
+  document.getElementById('statInvestido').textContent = fmt(investido);
+  document.getElementById('statPotencial').textContent = fmt(potencial);
+
+  if (!filtrados.length){
+    lista.innerHTML = `<div class="empty"><svg viewBox="0 0 24 24"><path d="M3 7l9-4 9 4-9 4-9-4z"/><path d="M3 7v10l9 4 9-4V7"/></svg><div>Nenhum item ainda.<br>Toque em + para cadastrar a primeira compra.</div></div>`;
+    return;
+  }
+
+  lista.innerHTML = filtrados.map(i=>{
+    const st = statusEstoque(i);
+    const label = st==='bad' ? 'esgotado' : st==='warn' ? 'estoque baixo' : 'estoque ok';
+    return `
+    <div class="item-card">
+      <div class="row1">
+        <div class="nome">${escapeHtml(i.nome)}</div>
+        <span class="badge ${st}">${i.estoqueAtual} un · ${label}</span>
+      </div>
+      <div class="figures">
+        <div class="fig"><div class="k">Custo un.</div><div class="v">${fmt(i.custoUnitario)}</div></div>
+        <div class="fig"><div class="k">Venda un.</div><div class="v">${fmt(i.valorVenda)}</div></div>
+        <div class="fig"><div class="k">Lucro %</div><div class="v">${(i.percentualLucro||0)}%</div></div>
+      </div>
+      <div class="item-actions">
+        <button class="btn small" data-repor="${i.id}">Repor estoque</button>
+        <button class="btn small ghost" data-editar="${i.id}">Editar %</button>
+        <button class="btn small danger" data-excluir="${i.id}">Excluir</button>
+      </div>
+    </div>`;
+  }).join('');
+
+  lista.querySelectorAll('[data-repor]').forEach(b=> b.addEventListener('click', ()=> abrirModalCompra(b.dataset.repor)));
+  lista.querySelectorAll('[data-editar]').forEach(b=> b.addEventListener('click', ()=> editarLucro(b.dataset.editar)));
+  lista.querySelectorAll('[data-excluir]').forEach(b=> b.addEventListener('click', ()=> excluirItem(b.dataset.excluir)));
+}
+document.getElementById('buscaItem').addEventListener('input', renderItens);
+
+function escapeHtml(s){ return (s||'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+async function editarLucro(id){
+  const item = itens.find(i=>i.id===id);
+  const novo = prompt(`Nova % de lucro para "${item.nome}" (atual: ${item.percentualLucro}%)`, item.percentualLucro);
+  if (novo===null) return;
+  const pct = parseFloat(novo.replace(',','.'));
+  if (isNaN(pct)) return toast('Valor inválido');
+  const valorVenda = round2(item.custoUnitario * (1+pct/100));
+  await db.collection('itens').doc(id).update({percentualLucro:pct, valorVenda, atualizadoEm: firebase.firestore.FieldValue.serverTimestamp()});
+  toast('Percentual atualizado');
+}
+
+async function excluirItem(id){
+  const item = itens.find(i=>i.id===id);
+  if (!confirm(`Excluir "${item.nome}" do estoque? Essa ação não apaga vendas já registradas.`)) return;
+  await db.collection('itens').doc(id).delete();
+  toast('Item excluído');
+}
+
+/* ---------------- MODAL COMPRA ---------------- */
+const overlayCompra = document.getElementById('overlayCompra');
+let compraItemAtualId = null;
+
+function abrirModalCompra(id){
+  compraItemAtualId = id || null;
+  const item = id ? itens.find(i=>i.id===id) : null;
+  document.getElementById('modalCompraTitulo').textContent = item ? `Repor estoque — ${item.nome}` : 'Nova compra';
+  document.getElementById('compraNome').value = item ? item.nome : '';
+  document.getElementById('compraNome').disabled = !!item;
+  document.getElementById('compraValor').value = '';
+  document.getElementById('compraQtd').value = '';
+  document.getElementById('compraLucro').value = item ? item.percentualLucro : '';
+  document.getElementById('compraEstoqueMinimo').value = item ? (item.estoqueMinimo ?? 3) : 3;
+  atualizarPreview();
+  overlayCompra.classList.add('active');
+}
+document.getElementById('fabAdd').addEventListener('click', ()=> abrirModalCompra(null));
+document.querySelectorAll('[data-close]').forEach(b=> b.addEventListener('click', ()=> overlayCompra.classList.remove('active')));
+overlayCompra.addEventListener('click', e=>{ if(e.target===overlayCompra) overlayCompra.classList.remove('active'); });
+
+function atualizarDatalist(){
+  document.getElementById('itensExistentes').innerHTML = itens.map(i=>`<option value="${escapeHtml(i.nome)}">`).join('');
+}
+
+['compraValor','compraQtd','compraLucro','compraNome'].forEach(idField=>{
+  document.getElementById(idField).addEventListener('input', atualizarPreview);
+});
+
+function round2(n){ return Math.round((n+Number.EPSILON)*100)/100; }
+
+function atualizarPreview(){
+  const nome = document.getElementById('compraNome').value.trim();
+  const valor = parseFloat((document.getElementById('compraValor').value||'0').replace(',','.'))||0;
+  const qtd = parseFloat((document.getElementById('compraQtd').value||'0').replace(',','.'))||0;
+  const lucro = parseFloat((document.getElementById('compraLucro').value||'0').replace(',','.'))||0;
+
+  const existente = itens.find(i=> i.nome.toLowerCase() === nome.toLowerCase());
+  let custoUnit = 0;
+  if (qtd > 0){
+    const custoCompra = valor / qtd;
+    if (existente){
+      const estoqueAtual = existente.estoqueAtual||0;
+      custoUnit = ((existente.custoUnitario||0)*estoqueAtual + valor) / (estoqueAtual + qtd);
+    } else {
+      custoUnit = custoCompra;
+    }
+  }
+  const venda = custoUnit * (1+lucro/100);
+  document.getElementById('prevCusto').textContent = fmt(custoUnit);
+  document.getElementById('prevVenda').textContent = fmt(venda);
+  document.getElementById('prevLucro').textContent = fmt(venda-custoUnit);
+}
+
+document.getElementById('btnSalvarCompra').addEventListener('click', async ()=>{
+  const nome = document.getElementById('compraNome').value.trim();
+  const valor = parseFloat((document.getElementById('compraValor').value||'').replace(',','.'));
+  const qtd = parseFloat((document.getElementById('compraQtd').value||'').replace(',','.'));
+  const lucro = parseFloat((document.getElementById('compraLucro').value||'').replace(',','.'));
+  const estoqueMinimo = parseFloat((document.getElementById('compraEstoqueMinimo').value||'3').replace(',','.'))||3;
+
+  if (!nome) return toast('Informe o nome do item');
+  if (!valor || valor<=0) return toast('Informe o valor pago');
+  if (!qtd || qtd<=0) return toast('Informe a quantidade');
+  if (isNaN(lucro)) return toast('Informe a % de lucro');
+
+  const btn = document.getElementById('btnSalvarCompra');
+  btn.disabled = true;
+  try{
+    const existente = itens.find(i=> i.nome.toLowerCase() === nome.toLowerCase());
+    const ref = existente ? db.collection('itens').doc(existente.id) : db.collection('itens').doc();
+
+    await db.runTransaction(async (tx)=>{
+      const doc = existente ? await tx.get(ref) : null;
+      const estoqueAtual = doc && doc.exists ? (doc.data().estoqueAtual||0) : 0;
+      const custoAtual = doc && doc.exists ? (doc.data().custoUnitario||0) : 0;
+      const novoCusto = round2(((custoAtual*estoqueAtual) + valor) / (estoqueAtual + qtd));
+      const novoEstoque = estoqueAtual + qtd;
+      const valorVenda = round2(novoCusto * (1+lucro/100));
+
+      tx.set(ref, {
+        nome,
+        custoUnitario: novoCusto,
+        percentualLucro: lucro,
+        valorVenda,
+        estoqueAtual: novoEstoque,
+        estoqueMinimo,
+        atualizadoEm: firebase.firestore.FieldValue.serverTimestamp(),
+        ...(doc && doc.exists ? {} : {criadoEm: firebase.firestore.FieldValue.serverTimestamp()})
+      }, {merge:true});
+
+      const compraRef = db.collection('compras').doc();
+      tx.set(compraRef, {
+        itemId: ref.id, itemNome: nome, valorCompra: valor, quantidade: qtd,
+        custoUnitarioCompra: round2(valor/qtd), data: firebase.firestore.FieldValue.serverTimestamp()
+      });
+    });
+
+    toast('Compra registrada');
+    overlayCompra.classList.remove('active');
+  }catch(err){
+    toast('Erro: '+err.message);
+  }finally{
+    btn.disabled = false;
+  }
+});
+
+/* ---------------- NOVA VENDA ---------------- */
+let linhasVenda = [{itemId:'', quantidade:1}];
+
+function renderLinhasVenda(){
+  const cont = document.getElementById('linhasVenda');
+  cont.innerHTML = linhasVenda.map((linha, idx)=>{
+    const item = itens.find(i=>i.id===linha.itemId);
+    const total = item ? (item.valorVenda * (linha.quantidade||0)) : 0;
+    return `
+    <div class="sale-line">
+      <div class="line-top">
+        <select data-idx="${idx}" class="sel-item">
+          <option value="">Selecione o item</option>
+          ${itens.map(i=>`<option value="${i.id}" ${i.id===linha.itemId?'selected':''} ${i.estoqueAtual<=0?'disabled':''}>${escapeHtml(i.nome)} (${i.estoqueAtual} em estoque)</option>`).join('')}
+        </select>
+        <input type="number" min="1" data-idx="${idx}" class="qtd-item" value="${linha.quantidade}" placeholder="Qtd">
+      </div>
+      <div class="line-bottom">
+        <button class="remove" data-idx="${idx}">remover</button>
+        <span class="line-total mono">${fmt(total)}</span>
+      </div>
+    </div>`;
+  }).join('');
+
+  cont.querySelectorAll('.sel-item').forEach(sel=> sel.addEventListener('change', e=>{
+    linhasVenda[e.target.dataset.idx].itemId = e.target.value; renderLinhasVenda();
+  }));
+  cont.querySelectorAll('.qtd-item').forEach(inp=> inp.addEventListener('input', e=>{
+    linhasVenda[e.target.dataset.idx].quantidade = parseInt(e.target.value)||0; renderLinhasVenda();
+  }));
+  cont.querySelectorAll('.remove').forEach(b=> b.addEventListener('click', e=>{
+    linhasVenda.splice(e.target.dataset.idx,1);
+    if (!linhasVenda.length) linhasVenda.push({itemId:'', quantidade:1});
+    renderLinhasVenda();
+  }));
+
+  let totalGeral = 0;
+  linhasVenda.forEach(l=>{ const it = itens.find(i=>i.id===l.itemId); if (it) totalGeral += it.valorVenda*(l.quantidade||0); });
+  document.getElementById('totalVendaValor').textContent = fmt(totalGeral);
+}
+document.getElementById('addLinhaVenda').addEventListener('click', ()=>{
+  linhasVenda.push({itemId:'', quantidade:1}); renderLinhasVenda();
+});
+renderLinhasVenda();
+
+document.getElementById('btnRegistrarVenda').addEventListener('click', async ()=>{
+  const cliente = document.getElementById('vendaCliente').value.trim();
+  const linhasValidas = linhasVenda.filter(l=> l.itemId && l.quantidade>0);
+
+  if (!cliente) return toast('Informe o nome do cliente');
+  if (!linhasValidas.length) return toast('Adicione ao menos um item');
+
+  for (const l of linhasValidas){
+    const item = itens.find(i=>i.id===l.itemId);
+    if (!item || item.estoqueAtual < l.quantidade) return toast(`Estoque insuficiente de "${item?item.nome:''}"`);
+  }
+
+  const btn = document.getElementById('btnRegistrarVenda');
+  btn.disabled = true;
+  try{
+    await db.runTransaction(async (tx)=>{
+      const refs = linhasValidas.map(l=> db.collection('itens').doc(l.itemId));
+      const docs = await Promise.all(refs.map(r=> tx.get(r)));
+
+      let valorTotalVenda = 0, custoTotalVenda = 0;
+      const itensVenda = linhasValidas.map((l, idx)=>{
+        const d = docs[idx].data();
+        if (d.estoqueAtual < l.quantidade) throw new Error(`Estoque insuficiente de "${d.nome}"`);
+        const valorTotal = round2(d.valorVenda * l.quantidade);
+        valorTotalVenda += valorTotal;
+        custoTotalVenda += d.custoUnitario * l.quantidade;
+        return {itemId: l.itemId, nome: d.nome, quantidade: l.quantidade, valorUnitario: d.valorVenda, custoUnitario: d.custoUnitario, valorTotal};
+      });
+
+      refs.forEach((ref, idx)=>{
+        const d = docs[idx].data();
+        tx.update(ref, {estoqueAtual: d.estoqueAtual - linhasValidas[idx].quantidade});
+      });
+
+      const vendaRef = db.collection('vendas').doc();
+      tx.set(vendaRef, {
+        cliente, itens: itensVenda,
+        valorTotalVenda: round2(valorTotalVenda),
+        custoTotalVenda: round2(custoTotalVenda),
+        lucroVenda: round2(valorTotalVenda-custoTotalVenda),
+        data: firebase.firestore.FieldValue.serverTimestamp()
+      });
+    });
+
+    toast('Venda registrada');
+    document.getElementById('vendaCliente').value = '';
+    linhasVenda = [{itemId:'', quantidade:1}];
+    renderLinhasVenda();
+  }catch(err){
+    toast('Erro: '+err.message);
+  }finally{
+    btn.disabled = false;
+  }
+});
+
+/* ---------------- HISTÓRICO DE VENDAS ---------------- */
+function renderVendas(){
+  const lista = document.getElementById('listaVendas');
+  document.getElementById('totalVendasHint').textContent = vendas.length + (vendas.length===1?' venda':' vendas');
+
+  if (!vendas.length){
+    lista.innerHTML = `<div class="empty"><svg viewBox="0 0 24 24"><path d="M4 4h16v4H4z"/><path d="M6 8v12h12V8"/></svg><div>Nenhuma venda registrada ainda.</div></div>`;
+    return;
+  }
+
+  lista.innerHTML = vendas.map(v=>{
+    const data = v.data && v.data.toDate ? v.data.toDate() : new Date();
+    const dataFmt = data.toLocaleDateString('pt-BR', {day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit'});
+    return `
+    <div class="sale-card">
+      <div class="head"><span class="cliente">${escapeHtml(v.cliente)}</span><span class="date">${dataFmt}</span></div>
+      <div class="chips">${(v.itens||[]).map(it=>`<span class="chip">${it.quantidade}x ${escapeHtml(it.nome)}</span>`).join('')}</div>
+      <div class="foot">
+        <button class="btn small danger" data-del-venda="${v.id}">Excluir</button>
+        <span class="total">${fmt(v.valorTotalVenda)}</span>
+      </div>
+    </div>`;
+  }).join('');
+
+  lista.querySelectorAll('[data-del-venda]').forEach(b=> b.addEventListener('click', ()=> excluirVenda(b.dataset.delVenda)));
+}
+
+async function excluirVenda(id){
+  const venda = vendas.find(v=>v.id===id);
+  if (!confirm(`Excluir a venda de "${venda.cliente}"? O estoque dos itens será devolvido.`)) return;
+  try{
+    await db.runTransaction(async (tx)=>{
+      const vendaRef = db.collection('vendas').doc(id);
+      const vendaDoc = await tx.get(vendaRef);
+      const data = vendaDoc.data();
+      const itemRefs = data.itens.map(it=> db.collection('itens').doc(it.itemId));
+      const itemDocs = await Promise.all(itemRefs.map(r=> tx.get(r)));
+      itemRefs.forEach((ref, idx)=>{
+        if (itemDocs[idx].exists){
+          const atual = itemDocs[idx].data().estoqueAtual||0;
+          tx.update(ref, {estoqueAtual: atual + data.itens[idx].quantidade});
+        }
+      });
+      tx.delete(vendaRef);
+    });
+    toast('Venda excluída e estoque devolvido');
+  }catch(err){
+    toast('Erro: '+err.message);
+  }
+}
+
+/* ---------------- RESUMO ---------------- */
+function renderResumo(){
+  let investido = 0, potencial = 0;
+  itens.forEach(i=>{ investido += (i.custoUnitario||0)*(i.estoqueAtual||0); potencial += (i.valorVenda||0)*(i.estoqueAtual||0); });
+  document.getElementById('rInvestido').textContent = fmt(investido);
+  document.getElementById('rLucroPotencial').textContent = fmt(potencial-investido);
+
+  let totalVendido = 0, lucroRealizado = 0;
+  vendas.forEach(v=>{ totalVendido += v.valorTotalVenda||0; lucroRealizado += v.lucroVenda||0; });
+  document.getElementById('rTotalVendido').textContent = fmt(totalVendido);
+  document.getElementById('rLucroRealizado').textContent = fmt(lucroRealizado);
+
+  const baixos = itens.filter(i=> statusEstoque(i) !== 'good');
+  const cont = document.getElementById('listaBaixoEstoque');
+  if (!baixos.length){
+    cont.innerHTML = `<div class="empty" style="padding:24px"><div>Nenhum item com estoque baixo. 👍</div></div>`;
+  } else {
+    cont.innerHTML = baixos.map(i=>{
+      const st = statusEstoque(i);
+      return `<div class="item-card"><div class="row1"><div class="nome">${escapeHtml(i.nome)}</div><span class="badge ${st}">${i.estoqueAtual} un</span></div></div>`;
+    }).join('');
+  }
+}
+
+} // fim iniciarApp
+</script>
+</body>
+</html>
