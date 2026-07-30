@@ -245,6 +245,33 @@
   .vitrine-card .info{padding:11px 12px 13px;}
   .vitrine-card .nome{font-family:var(--font-display); font-size:15.5px; font-weight:600; line-height:1.2;}
   .vitrine-card .preco{font-family:var(--font-mono); font-size:19px; font-weight:700; color:var(--accent); margin-top:6px;}
+  .vitrine-card .qty-row{margin-top:11px;}
+  .btn-add-cart{
+    width:100%; background:var(--accent-soft); color:var(--accent); border:1px solid transparent;
+    border-radius:20px; padding:8px 10px; font-size:12.5px; font-weight:700;
+  }
+  .qty-stepper{display:flex; align-items:center; justify-content:space-between; border:1px solid var(--line); border-radius:20px; overflow:hidden; background:var(--surface-2);}
+  .qty-stepper button{width:34px; height:32px; background:none; border:none; color:var(--accent); font-size:17px; line-height:1; display:flex; align-items:center; justify-content:center;}
+  .qty-stepper .qty-val{font-family:var(--font-mono); font-size:13.5px; font-weight:600;}
+
+  .fab-cart{
+    position:fixed; left:18px; bottom:calc(84px + env(safe-area-inset-bottom)); z-index:25;
+    height:52px; padding:0 18px 0 16px; border-radius:30px; background:var(--accent); color:#1B1206;
+    border:none; box-shadow:var(--shadow); display:none; align-items:center; gap:9px; font-weight:700; font-size:13.5px;
+  }
+  .fab-cart.show{display:flex;}
+  .fab-cart .cart-count{background:#1B1206; color:var(--accent); min-width:22px; height:22px; padding:0 6px; border-radius:11px; display:flex; align-items:center; justify-content:center; font-size:11.5px; font-family:var(--font-mono);}
+
+  .pedido-linha{display:flex; align-items:center; gap:10px; padding:10px 0; border-bottom:1px solid var(--line);}
+  .pedido-linha:last-child{border-bottom:none;}
+  .pedido-linha .thumb{width:44px; height:44px; border-radius:9px; object-fit:cover; border:1px solid var(--line); flex:none; background:var(--surface-2);}
+  .pedido-linha .info{flex:1; min-width:0;}
+  .pedido-linha .nome{font-size:13.5px; font-weight:600; line-height:1.25;}
+  .pedido-linha .preco-un{font-size:11.5px; color:var(--text-faint); margin-top:2px;}
+  .pedido-linha .qty-stepper{flex:none;}
+  .pedido-total{display:flex; justify-content:space-between; align-items:center; margin:14px 0; padding:14px 16px; background:var(--accent-soft); border:1px solid var(--accent-dim); border-radius:var(--radius);}
+  .pedido-total .k{font-size:12.5px; color:var(--text-dim); text-transform:uppercase; letter-spacing:.05em;}
+  .pedido-total .v{font-family:var(--font-mono); font-size:20px; font-weight:700; color:var(--accent);}
   .vitrine-toolbar{display:flex; gap:8px; align-items:center; margin:10px 0 4px;}
   .vitrine-toolbar .search{flex:1;}
 
@@ -292,6 +319,7 @@
     header.top{position:static; background:none; backdrop-filter:none; max-width:900px; margin:0 auto; padding:28px 32px 0;}
     main{flex:1; max-width:900px; padding:8px 32px 60px; margin:0;}
     .fab{right:36px; bottom:36px;}
+    .fab-cart{left:36px; bottom:36px;}
     .stat-grid{grid-template-columns:repeat(4,1fr);}
     .field-row.desktop-3{grid-template-columns:1fr 1fr 1fr;}
     .item-list{display:grid; grid-template-columns:repeat(2,1fr); gap:10px;}
@@ -387,6 +415,11 @@
 
       <!-- HISTÓRICO DE VENDAS -->
       <section class="view" id="view-vendas">
+        <div class="view-head"><h2>Pedidos da Vitrine</h2><span class="hint" id="totalPedidosHint"></span></div>
+        <div class="item-list" style="display:flex;flex-direction:column" id="listaPedidos"></div>
+
+        <div class="cut-line" style="margin:22px 0"></div>
+
         <div class="view-head"><h2>Vendas</h2><span class="hint" id="totalVendasHint"></span></div>
         <div class="item-list" style="display:flex;flex-direction:column" id="listaVendas"></div>
       </section>
@@ -416,6 +449,21 @@
 </div>
 
 <button class="fab" id="fabAdd" title="Nova compra / item">+</button>
+<button class="fab-cart" id="fabCarrinho" title="Ver pedido">
+  🛒 <span class="cart-count" id="cartCount">0</span>
+</button>
+
+<!-- MODAL PEDIDO (carrinho da vitrine) -->
+<div class="overlay" id="overlayPedido">
+  <div class="modal">
+    <button class="modal-close" data-close-pedido>×</button>
+    <h3>Seu pedido</h3>
+    <div id="pedidoLista"></div>
+    <div class="pedido-total"><span class="k">Total</span><span class="v" id="pedidoTotal">R$ 0,00</span></div>
+    <div class="field"><label>Seu nome</label><input id="pedidoNome" placeholder="Como podemos te chamar?"></div>
+    <button class="btn primary" id="btnEnviarPedido" style="width:100%;padding:13px">Enviar pedido pelo WhatsApp</button>
+  </div>
+</div>
 
 <!-- MODAL COMPRA / ITEM -->
 <div class="overlay" id="overlayCompra">
@@ -558,17 +606,150 @@ if (configPendente) {
       const img = i.imagem
         ? `<img src="${i.imagem}" alt="${escapeHtml(i.nome)}">`
         : `<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="14" rx="2"/><path d="M3 15l4-4 3 3 5-5 6 6"/></svg>`;
+      const qtd = carrinho[i.id]?.quantidade || 0;
+      const controle = qtd > 0
+        ? `<div class="qty-stepper">
+             <button type="button" data-menos="${i.id}">−</button>
+             <span class="qty-val">${qtd}</span>
+             <button type="button" data-mais="${i.id}">+</button>
+           </div>`
+        : `<button type="button" class="btn-add-cart" data-mais="${i.id}">Adicionar</button>`;
       return `
       <div class="vitrine-card">
         <div class="img-wrap">${img}</div>
         <div class="info">
           <div class="nome">${escapeHtml(i.nome)}</div>
           <div class="preco">${fmt(i.valorVenda)}</div>
+          <div class="qty-row">${controle}</div>
         </div>
       </div>`;
     }).join('');
+
+    cont.querySelectorAll('[data-mais]').forEach(b=> b.addEventListener('click', ()=> alterarCarrinho(b.dataset.mais, 1)));
+    cont.querySelectorAll('[data-menos]').forEach(b=> b.addEventListener('click', ()=> alterarCarrinho(b.dataset.menos, -1)));
   }
   document.getElementById('buscaVitrine').addEventListener('input', renderVitrinePublica);
+
+  /* ---------------- CARRINHO / PEDIDO PELO WHATSAPP ---------------- */
+  const NUMERO_WHATSAPP = '5566996902668';
+  let carrinho = {}; // { itemId: {nome, valorVenda, imagem, quantidade} }
+
+  function alterarCarrinho(itemId, delta){
+    const item = vitrineItens.find(i=>i.id===itemId);
+    if (!item) return;
+    const atual = carrinho[itemId]?.quantidade || 0;
+    const nova = Math.max(0, Math.min(item.estoqueAtual||0, atual + delta));
+    if (nova <= 0){
+      delete carrinho[itemId];
+    } else {
+      carrinho[itemId] = {nome: item.nome, valorVenda: item.valorVenda||0, imagem: item.imagem||null, quantidade: nova};
+    }
+    renderVitrinePublica();
+    atualizarFabCarrinho();
+    if (overlayPedido.classList.contains('active')) renderPedido();
+  }
+
+  function totalCarrinho(){
+    return Object.values(carrinho).reduce((soma,it)=> soma + it.valorVenda*it.quantidade, 0);
+  }
+  function itensCarrinho(){
+    return Object.values(carrinho).reduce((soma,it)=> soma + it.quantidade, 0);
+  }
+
+  function atualizarFabCarrinho(){
+    const qtd = itensCarrinho();
+    document.getElementById('cartCount').textContent = qtd;
+    fabCarrinho.classList.toggle('show', qtd > 0);
+  }
+
+  const overlayPedido = document.getElementById('overlayPedido');
+  const fabCarrinho = document.getElementById('fabCarrinho');
+  fabCarrinho.addEventListener('click', ()=>{ renderPedido(); overlayPedido.classList.add('active'); });
+  document.querySelectorAll('[data-close-pedido]').forEach(b=> b.addEventListener('click', ()=> overlayPedido.classList.remove('active')));
+  overlayPedido.addEventListener('click', e=>{ if(e.target===overlayPedido) overlayPedido.classList.remove('active'); });
+
+  function renderPedido(){
+    const lista = document.getElementById('pedidoLista');
+    const entradas = Object.entries(carrinho);
+    if (!entradas.length){
+      lista.innerHTML = `<div class="empty" style="padding:20px 0"><div>Seu carrinho está vazio.</div></div>`;
+      document.getElementById('pedidoTotal').textContent = fmt(0);
+      return;
+    }
+    lista.innerHTML = entradas.map(([id, it])=>{
+      const thumb = it.imagem ? `<img class="thumb" src="${it.imagem}" alt="">` : `<div class="thumb"></div>`;
+      return `
+      <div class="pedido-linha">
+        ${thumb}
+        <div class="info">
+          <div class="nome">${escapeHtml(it.nome)}</div>
+          <div class="preco-un">${fmt(it.valorVenda)} un.</div>
+        </div>
+        <div class="qty-stepper">
+          <button type="button" data-menos="${id}">−</button>
+          <span class="qty-val">${it.quantidade}</span>
+          <button type="button" data-mais="${id}">+</button>
+        </div>
+      </div>`;
+    }).join('');
+    document.getElementById('pedidoTotal').textContent = fmt(totalCarrinho());
+
+    lista.querySelectorAll('[data-mais]').forEach(b=> b.addEventListener('click', ()=> alterarCarrinho(b.dataset.mais, 1)));
+    lista.querySelectorAll('[data-menos]').forEach(b=> b.addEventListener('click', ()=> alterarCarrinho(b.dataset.menos, -1)));
+  }
+
+  async function gerarNumeroPedido(){
+    const ref = db.collection('contadores').doc('pedidos');
+    return db.runTransaction(async (tx)=>{
+      const doc = await tx.get(ref);
+      const proximo = (doc.exists ? (doc.data().ultimo||0) : 0) + 1;
+      tx.set(ref, {ultimo: proximo}, {merge:true});
+      return proximo;
+    });
+  }
+
+  document.getElementById('btnEnviarPedido').addEventListener('click', async ()=>{
+    const entradas = Object.entries(carrinho);
+    if (!entradas.length) return toast('Adicione ao menos um produto no pedido');
+
+    const nome = document.getElementById('pedidoNome').value.trim();
+    const btn = document.getElementById('btnEnviarPedido');
+    btn.disabled = true;
+    try{
+      const numero = await gerarNumeroPedido();
+      const numeroFmt = '#' + String(numero).padStart(4,'0');
+      const itensPedido = entradas.map(([id, it])=>({
+        itemId: id, nome: it.nome, quantidade: it.quantidade,
+        valorUnitario: it.valorVenda, valorTotal: round2(it.valorVenda*it.quantidade)
+      }));
+      const total = round2(totalCarrinho());
+
+      await db.collection('pedidos').add({
+        numero, cliente: nome || 'Não informado', itens: itensPedido, total,
+        status: 'pendente', criadoEm: firebase.firestore.FieldValue.serverTimestamp()
+      });
+
+      let msg = `Olá! Gostaria de fazer o pedido ${numeroFmt} na Oficina Criativa:\n\n`;
+      itensPedido.forEach(it=>{
+        msg += `• ${it.quantidade}x ${it.nome} — ${fmt(it.valorTotal)}\n`;
+      });
+      msg += `\nTotal: ${fmt(total)}`;
+      if (nome) msg += `\n\nNome: ${nome}`;
+
+      const url = `https://wa.me/${NUMERO_WHATSAPP}?text=${encodeURIComponent(msg)}`;
+      window.open(url, '_blank');
+
+      carrinho = {};
+      renderVitrinePublica();
+      atualizarFabCarrinho();
+      overlayPedido.classList.remove('active');
+      toast(`Pedido ${numeroFmt} enviado!`);
+    }catch(err){
+      toast('Erro ao gerar o pedido: '+err.message);
+    }finally{
+      btn.disabled = false;
+    }
+  });
 
   /* ---------------- LOGIN (modal) ---------------- */
   const overlayLogin = document.getElementById('overlayLogin');
@@ -643,6 +824,7 @@ function iniciarApp(db){
 
 let itens = [];
 let vendas = [];
+let pedidos = [];
 
 /* ---------------- FIRESTORE LISTENERS ---------------- */
 db.collection('itens').orderBy('nome').onSnapshot(snap=>{
@@ -659,6 +841,11 @@ db.collection('vendas').orderBy('data','desc').onSnapshot(snap=>{
   renderVendas();
   renderResumo();
 }, err=> toast('Erro ao carregar vendas: '+err.message));
+
+db.collection('pedidos').orderBy('numero','desc').onSnapshot(snap=>{
+  pedidos = snap.docs.map(d=>({id:d.id, ...d.data()}));
+  renderPedidos();
+}, err=> toast('Erro ao carregar pedidos: '+err.message));
 
 /* ---------------- RENDER: ESTOQUE ---------------- */
 function statusEstoque(item){
@@ -1107,6 +1294,97 @@ document.getElementById('btnRegistrarVenda').addEventListener('click', async ()=
     btn.disabled = false;
   }
 });
+
+/* ---------------- PEDIDOS RECEBIDOS PELA VITRINE ---------------- */
+function renderPedidos(){
+  const lista = document.getElementById('listaPedidos');
+  document.getElementById('totalPedidosHint').textContent = pedidos.length + (pedidos.length===1?' pedido':' pedidos');
+
+  if (!pedidos.length){
+    lista.innerHTML = `<div class="empty"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="14" rx="2"/><path d="M3 15l4-4 3 3 5-5 6 6"/></svg><div>Nenhum pedido recebido pela vitrine ainda.</div></div>`;
+    return;
+  }
+
+  lista.innerHTML = pedidos.map(p=>{
+    const data = p.criadoEm && p.criadoEm.toDate ? p.criadoEm.toDate() : new Date();
+    const dataFmt = data.toLocaleDateString('pt-BR', {day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit'});
+    const numeroFmt = '#' + String(p.numero).padStart(4,'0');
+    const atendido = p.status === 'atendido';
+    return `
+    <div class="sale-card">
+      <div class="head"><span class="cliente">${numeroFmt} — ${escapeHtml(p.cliente||'Não informado')}</span><span class="date">${dataFmt}</span></div>
+      <div class="chips">${(p.itens||[]).map(it=>`<span class="chip">${it.quantidade}x ${escapeHtml(it.nome)}</span>`).join('')}</div>
+      <div class="foot">
+        <div style="display:flex; gap:8px; align-items:center">
+          <span class="badge ${atendido?'good':'warn'}">${atendido?'atendido':'pendente'}</span>
+          ${atendido ? '' : `<button class="btn small ghost" data-confirmar="${p.id}">Confirmar e lançar venda</button>`}
+          <button class="btn small danger" data-del-pedido="${p.id}">Excluir</button>
+        </div>
+        <span class="total">${fmt(p.total)}</span>
+      </div>
+    </div>`;
+  }).join('');
+
+  lista.querySelectorAll('[data-confirmar]').forEach(b=> b.addEventListener('click', ()=> confirmarPedido(b.dataset.confirmar)));
+  lista.querySelectorAll('[data-del-pedido]').forEach(b=> b.addEventListener('click', ()=> excluirPedido(b.dataset.delPedido)));
+}
+
+async function confirmarPedido(id){
+  const pedido = pedidos.find(p=>p.id===id);
+  if (!pedido) return;
+
+  for (const linha of pedido.itens){
+    const item = itens.find(i=>i.id===linha.itemId);
+    if (!item || item.estoqueAtual < linha.quantidade){
+      return toast(`Estoque insuficiente de "${linha.nome}" pra confirmar este pedido`);
+    }
+  }
+
+  try{
+    await db.runTransaction(async (tx)=>{
+      const refs = pedido.itens.map(l=> db.collection('itens').doc(l.itemId));
+      const docs = await Promise.all(refs.map(r=> tx.get(r)));
+
+      let valorTotalVenda = 0, custoTotalVenda = 0;
+      const itensVenda = pedido.itens.map((l, idx)=>{
+        const d = docs[idx].data();
+        if (!d || d.estoqueAtual < l.quantidade) throw new Error(`Estoque insuficiente de "${l.nome}"`);
+        const valorTotal = round2(d.valorVenda * l.quantidade);
+        valorTotalVenda += valorTotal;
+        custoTotalVenda += d.custoUnitario * l.quantidade;
+        return {itemId: l.itemId, nome: d.nome, quantidade: l.quantidade, valorUnitario: d.valorVenda, custoUnitario: d.custoUnitario, valorTotal};
+      });
+
+      refs.forEach((ref, idx)=>{
+        const d = docs[idx].data();
+        tx.update(ref, {estoqueAtual: d.estoqueAtual - pedido.itens[idx].quantidade});
+      });
+
+      const vendaRef = db.collection('vendas').doc();
+      tx.set(vendaRef, {
+        cliente: pedido.cliente, itens: itensVenda,
+        valorTotalVenda: round2(valorTotalVenda),
+        custoTotalVenda: round2(custoTotalVenda),
+        lucroVenda: round2(valorTotalVenda-custoTotalVenda),
+        origemPedido: pedido.numero,
+        data: firebase.firestore.FieldValue.serverTimestamp()
+      });
+
+      const pedidoRef = db.collection('pedidos').doc(id);
+      tx.update(pedidoRef, {status:'atendido', vendaId: vendaRef.id});
+    });
+
+    toast(`Pedido #${String(pedido.numero).padStart(4,'0')} confirmado — venda lançada`);
+  }catch(err){
+    toast('Erro ao confirmar pedido: '+err.message);
+  }
+}
+
+async function excluirPedido(id){
+  if (!confirm('Excluir este pedido do histórico? Isso não afeta o estoque.')) return;
+  await db.collection('pedidos').doc(id).delete();
+  toast('Pedido excluído');
+}
 
 /* ---------------- HISTÓRICO DE VENDAS ---------------- */
 function renderVendas(){
